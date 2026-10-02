@@ -1,3 +1,4 @@
+import zlib from 'zlib';
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import rateLimit from '@fastify/rate-limit';
@@ -19,6 +20,14 @@ export async function buildServer() {
     bodyLimit: 15 * 1024 * 1024, // 15MB buffer for large compressed batches
     keepAliveTimeout: 65000,
     connectionTimeout: 10000,
+  });
+
+  // Transparent gzip decompression for incoming compressed agent telemetry
+  app.addHook('preParsing', async (request, _reply, payload) => {
+    if (request.headers['content-encoding'] === 'gzip') {
+      return payload.pipe(zlib.createGunzip());
+    }
+    return payload;
   });
 
   // 1. CORS plugin
