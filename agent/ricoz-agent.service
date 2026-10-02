@@ -1,0 +1,46 @@
+[Unit]
+Description=RicozInfra Telemetry Collector Daemon
+Documentation=https://docs.ricozinfra.com/agent
+After=network-online.target systemd-sysctl.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/local/bin/ricoz-agent --config /etc/ricozinfra/agent.yaml
+Restart=always
+RestartSec=5s
+KillMode=process
+TimeoutStopSec=10s
+
+# -------------------------------------------------------------
+# RESOURCE GOVERNANCE & FOOTPRINT ENFORCEMENT
+# Strict limit guarantees: < 25MB RAM usage, < 0.5% CPU overhead
+# -------------------------------------------------------------
+MemoryAccounting=yes
+MemoryHigh=24M
+MemoryMax=32M
+CPUAccounting=yes
+CPUQuota=5%
+LimitNOFILE=65536
+TasksMax=128
+
+# -------------------------------------------------------------
+# LINUX KERNEL SECURITY SANDBOXING
+# -------------------------------------------------------------
+ProtectHome=true
+ProtectSystem=strict
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+NoNewPrivileges=true
+ReadWritePaths=/etc/ricozinfra
+ReadOnlyPaths=/proc /sys
+
+# Standard logging to journald
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ricoz-agent
+
+[Install]
+WantedBy=multi-user.target

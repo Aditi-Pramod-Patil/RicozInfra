@@ -1,0 +1,29 @@
+# ==============================================================================
+# RicozInfra Telemetry Collector Daemon Configuration
+# Path: /etc/ricozinfra/agent.yaml
+# ==============================================================================
+
+# Ingestion Gateway endpoint (HTTP/2 with TLS)
+gateway_url: "https://ingest.ricozinfra.com/api/v1/telemetry/ingest"
+
+# Organization Bearer API Authentication Token
+# Obtain from RicozInfra Dashboard -> Settings -> API Keys
+api_key: "ricoz_live_sec_prod_key_99420a7b"
+
+# Host & Topology Identification
+# If empty, hostname is automatically retrieved via os.Hostname()
+# host_id is automatically extracted from /etc/machine-id
+hostname: ""
+cluster: "us-east-cluster-01"
+role: "Edge-Gateway"
+
+# Telemetry Sampling Interval (default: 1000ms = 1 second)
+sample_interval: "1000ms"
+
+# Low-overhead microsecond RTT and network jitter probe target
+# Recommended: Default internal VPC gateway or high-availability public resolver
+probe_target: "1.1.1.1:443"
+
+# In-memory circular buffer capacity (data points to spool during network outages)
+# 300 points @ 1Hz = 5-minute circuit breaker protection
+buffer_capacity: 300
