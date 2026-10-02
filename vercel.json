@@ -8,19 +8,6 @@
     "backend": {
       "root": "backend",
       "framework": "fastify"
-    },
-    "agent": {
-      "root": "agent",
-      "runtime": "go",
-      "entrypoint": "main.go",
-      "bindings": [
-        {
-          "type": "service",
-          "service": "backend",
-          "format": "url",
-          "env": "BACKEND_URL"
-        }
-      ]
     }
   },
   "rewrites": [
