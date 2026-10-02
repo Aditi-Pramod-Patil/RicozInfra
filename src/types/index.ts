@@ -1,11 +1,31 @@
 export type PageView = 
   | 'landing'
+  | 'signin'
+  | 'signup'
   | 'overview' 
   | 'hosts' 
   | 'topology' 
   | 'incidents' 
   | 'telemetry' 
   | 'runbooks';
+
+export interface User {
+  id: string;
+  email: string;
+  fullName: string;
+  role: 'admin' | 'sre' | 'viewer';
+  orgId: string;
+  orgName: string;
+  apiKey: string;
+  createdAt: string;
+}
+
+export interface Organization {
+  id: string;
+  name: string;
+  apiKey: string;
+  createdAt: string;
+}
 
 export type HostType = 'bare-metal' | 'esxi' | 'k8s';
 

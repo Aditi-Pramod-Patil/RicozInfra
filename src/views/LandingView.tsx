@@ -163,7 +163,7 @@ export const LandingView: React.FC<LandingViewProps> = ({ onNavigateToApp }) => 
         {/* Right Actions */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <button
-            onClick={() => onNavigateToApp('overview')}
+            onClick={() => onNavigateToApp('signin')}
             style={{
               background: 'transparent',
               border: 'none',
@@ -189,7 +189,7 @@ export const LandingView: React.FC<LandingViewProps> = ({ onNavigateToApp }) => 
           </button>
 
           <button
-            onClick={() => setIsTrialModalOpen(true)}
+            onClick={() => onNavigateToApp('signup')}
             className="btn-crimson-primary"
             style={{ fontSize: '12.5px', padding: '7px 16px' }}
           >
@@ -257,7 +257,7 @@ export const LandingView: React.FC<LandingViewProps> = ({ onNavigateToApp }) => 
         {/* Dual CTA */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap', justifyContent: 'center', marginBottom: '64px' }}>
           <button
-            onClick={() => setIsTrialModalOpen(true)}
+            onClick={() => onNavigateToApp('signup')}
             className="btn-crimson-primary"
             style={{ fontSize: '14.5px', padding: '12px 26px', borderRadius: '8px' }}
           >

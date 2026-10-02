@@ -1,19 +1,30 @@
 import React, { useState, useEffect } from 'react';
 import type { PageView } from './types';
+import { AuthProvider, useAuth } from './context/AuthContext';
+import { FleetProvider, useFleet } from './context/FleetContext';
 import { Header } from './components/Header';
 import { CommandPaletteModal } from './components/CommandPaletteModal';
 import { TerminalModal } from './components/TerminalModal';
 import { RunbookModal } from './components/RunbookModal';
 import { LandingView } from './views/LandingView';
+import { SignInView } from './views/SignInView';
+import { SignUpView } from './views/SignUpView';
 import { OverviewView } from './views/OverviewView';
 import { HostInventoryView } from './views/HostInventoryView';
 import { TopologyView } from './views/TopologyView';
 import { IncidentsView } from './views/IncidentsView';
 import { TelemetryView } from './views/TelemetryView';
 import { RunbooksView } from './views/RunbooksView';
-import { FLEET_METRICS } from './data/mockData';
 
-export const App: React.FC = () => {
+/**
+ * Inner app component that has access to Auth + Fleet context.
+ * Enforces route protection: unauthenticated users are redirected to signin
+ * when attempting to access any console view.
+ */
+const AppInner: React.FC = () => {
+  const { isAuthenticated } = useAuth();
+  const { activeIncidents } = useFleet();
+
   // Default to the Public Marketing & Acquisition Landing Page
   const [currentView, setCurrentView] = useState<PageView>('landing');
   const [cluster, setCluster] = useState('us-east-01');
@@ -25,7 +36,9 @@ export const App: React.FC = () => {
     ip: '10.240.12.84',
   });
   const [selectedHostName, setSelectedHostName] = useState<string>('prod-edge-gw-01');
-  const [activeP1Count, setActiveP1Count] = useState<number>(FLEET_METRICS.activeP1Incidents);
+
+  // Derive active P1 incident count from live FleetContext (zero-demo-data compliant)
+  const activeP1Count = activeIncidents.filter(i => i.severity === 'P1' && i.status !== 'Resolved').length;
 
   // Global Keyboard Shortcuts (Cmd+K / Ctrl+K)
   useEffect(() => {
@@ -39,6 +52,26 @@ export const App: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
+  /**
+   * AUTH-GUARDED NAVIGATION:
+   * Console views (overview, hosts, topology, incidents, telemetry, runbooks)
+   * require authentication. Unauthenticated users are redirected to signin.
+   * Landing, signin, and signup are always accessible.
+   */
+  const handleNavigate = (view: PageView) => {
+    const publicViews: PageView[] = ['landing', 'signin', 'signup'];
+    if (!publicViews.includes(view) && !isAuthenticated) {
+      setCurrentView('signin');
+      return;
+    }
+    // If authenticated user tries to visit signin/signup, redirect to overview
+    if ((view === 'signin' || view === 'signup') && isAuthenticated) {
+      setCurrentView('overview');
+      return;
+    }
+    setCurrentView(view);
+  };
+
   const handleOpenTerminal = (hostname: string, ip: string = '10.240.12.84') => {
     setTerminalState({
       isOpen: true,
@@ -49,30 +82,54 @@ export const App: React.FC = () => {
 
   const handleSelectHost = (hostname: string) => {
     setSelectedHostName(hostname);
-    setCurrentView('hosts');
+    handleNavigate('hosts');
   };
 
   const handleRunbookSuccess = () => {
-    // When runbook executes successfully
-    setActiveP1Count(0);
+    // Runbook execution handled through FleetContext
   };
 
-  // If on Public Marketing Landing Page
+  // Public Marketing Landing Page
   if (currentView === 'landing') {
     return (
       <LandingView
-        onNavigateToApp={(view) => setCurrentView(view || 'overview')}
+        onNavigateToApp={(view) => handleNavigate(view || 'overview')}
       />
     );
   }
 
-  // Otherwise, render Live Enterprise Command Deck
+  // Sign In Page (publicly accessible)
+  if (currentView === 'signin') {
+    if (isAuthenticated) {
+      // Already authenticated, redirect to overview
+      handleNavigate('overview');
+      return null;
+    }
+    return <SignInView onNavigate={handleNavigate} />;
+  }
+
+  // Sign Up Page (publicly accessible)
+  if (currentView === 'signup') {
+    if (isAuthenticated) {
+      handleNavigate('overview');
+      return null;
+    }
+    return <SignUpView onNavigate={handleNavigate} />;
+  }
+
+  // Console views require authentication — redirect if not authenticated
+  if (!isAuthenticated) {
+    handleNavigate('signin');
+    return null;
+  }
+
+  // Render Live Enterprise Command Deck (authenticated)
   return (
     <div className="app-container">
       {/* Persistent Global Top Navigation Header (Pure White) */}
       <Header
         currentView={currentView}
-        onNavigate={(view) => setCurrentView(view)}
+        onNavigate={handleNavigate}
         onOpenSearch={() => setIsSearchOpen(true)}
         cluster={cluster}
         onSelectCluster={(c) => setCluster(c)}
@@ -83,7 +140,7 @@ export const App: React.FC = () => {
       <main className="main-viewport">
         {currentView === 'overview' && (
           <OverviewView
-            onNavigate={(view) => setCurrentView(view)}
+            onNavigate={handleNavigate}
             onOpenRunbookModal={() => setIsRunbookModalOpen(true)}
           />
         )}
@@ -92,14 +149,14 @@ export const App: React.FC = () => {
           <HostInventoryView
             selectedHostName={selectedHostName}
             onOpenTerminal={handleOpenTerminal}
-            onNavigateToIncidents={() => setCurrentView('incidents')}
+            onNavigateToIncidents={() => handleNavigate('incidents')}
           />
         )}
 
         {currentView === 'topology' && (
           <TopologyView
             onSelectHost={handleSelectHost}
-            onNavigateToIncidents={() => setCurrentView('incidents')}
+            onNavigateToIncidents={() => handleNavigate('incidents')}
           />
         )}
 
@@ -108,7 +165,7 @@ export const App: React.FC = () => {
             onOpenRunbookModal={() => setIsRunbookModalOpen(true)}
             onNavigateToHosts={() => {
               setSelectedHostName('prod-edge-gw-01');
-              setCurrentView('hosts');
+              handleNavigate('hosts');
             }}
           />
         )}
@@ -124,7 +181,7 @@ export const App: React.FC = () => {
       <CommandPaletteModal
         isOpen={isSearchOpen}
         onClose={() => setIsSearchOpen(false)}
-        onNavigate={(view) => setCurrentView(view)}
+        onNavigate={handleNavigate}
         onSelectHost={handleSelectHost}
         onOpenTerminal={(hostname) => handleOpenTerminal(hostname)}
       />
@@ -144,6 +201,20 @@ export const App: React.FC = () => {
         onSuccess={handleRunbookSuccess}
       />
     </div>
+  );
+};
+
+/**
+ * Root App component: Wraps the entire application in AuthProvider and FleetProvider.
+ * This ensures useAuth() and useFleet() are available everywhere in the component tree.
+ */
+export const App: React.FC = () => {
+  return (
+    <AuthProvider>
+      <FleetProvider>
+        <AppInner />
+      </FleetProvider>
+    </AuthProvider>
   );
 };
 

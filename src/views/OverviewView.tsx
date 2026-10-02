@@ -1,9 +1,8 @@
 import React, { useState } from 'react';
 import type { PageView } from '../types';
-import { 
-  FLEET_METRICS, 
-  TIME_SERIES_24H 
-} from '../data/mockData';
+import { useFleet } from '../context/FleetContext';
+import { useAuth } from '../context/AuthContext';
+import { AddHostModal } from '../components/AddHostModal';
 import { 
   AlertTriangle, 
   ArrowRight, 
@@ -11,7 +10,10 @@ import {
   Play, 
   ShieldAlert, 
   Server,
-  GitFork
+  GitFork,
+  Terminal,
+  Copy,
+  Plus
 } from 'lucide-react';
 
 interface OverviewViewProps {
@@ -23,14 +25,26 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
   onNavigate,
   onOpenRunbookModal,
 }) => {
+  const { hosts, activeIncidents, metricsData, isZeroState, simulateAgentConnect, resetToZeroState, loadRealFleetData } = useFleet();
+  const { organization } = useAuth();
   const [acknowledged, setAcknowledged] = useState(false);
   const [selectedTimeframe, setSelectedTimeframe] = useState<'1h' | '6h' | '24h' | '7d'>('24h');
-  const [hoveredPoint, setHoveredPoint] = useState<typeof TIME_SERIES_24H[0] | null>(null);
+  const [copiedSnippet, setCopiedSnippet] = useState(false);
+  const [isAddHostModalOpen, setIsAddHostModalOpen] = useState(false);
 
-  // Sparkline points calculation for Fleet Avg CPU Load card (clean minimalist slate stroke line)
-  const sparkPoints = [38, 35, 34, 40, 46, 51, 53, 55, 88, 62, 49, 44, 42, 41];
-  const minSpark = 30;
-  const maxSpark = 95;
+  const apiKey = organization?.apiKey || 'rcz_live_production_key_sample';
+  const curlCommand = `curl -sSL https://get.ricozinfra.com/install.sh | sudo bash -s -- --token=${apiKey}`;
+
+  const copySnippet = () => {
+    navigator.clipboard.writeText(curlCommand);
+    setCopiedSnippet(true);
+    setTimeout(() => setCopiedSnippet(false), 2000);
+  };
+
+  // Sparkline data
+  const sparkPoints = isZeroState ? [0, 0, 0, 0, 0, 0, 0, 0, 0, 0] : [38, 35, 34, 40, 46, 51, 53, 55, 88, 62, 49, 44, 42, 41];
+  const minSpark = 0;
+  const maxSpark = 100;
   const svgSparkWidth = 140;
   const svgSparkHeight = 32;
 
@@ -40,18 +54,25 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
     return `${idx === 0 ? 'M' : 'L'} ${x.toFixed(1)} ${y.toFixed(1)}`;
   }).join(' ');
 
-  // Full-width 24h chart dimensions
+  // Full-width chart dimensions
   const chartWidth = 1000;
   const chartHeight = 240;
   const padX = 40;
   const padY = 30;
   const plotWidth = chartWidth - padX * 2;
   const plotHeight = chartHeight - padY * 2;
-  const maxVal = 160; // Max throughput Gbps
+  const maxVal = 160;
 
-  // Line points for clean slate-700 stroke line
-  const linePoints = TIME_SERIES_24H.map((pt, idx) => {
-    const x = padX + (idx / (TIME_SERIES_24H.length - 1)) * plotWidth;
+  const activePoints = metricsData.length > 0 ? metricsData : [
+    { time: '00:00', hour: 0, loadAvg: 0, throughputGbps: 0, ingressRate: 0, packetDropRate: 0 },
+    { time: '06:00', hour: 6, loadAvg: 0, throughputGbps: 0, ingressRate: 0, packetDropRate: 0 },
+    { time: '12:00', hour: 12, loadAvg: 0, throughputGbps: 0, ingressRate: 0, packetDropRate: 0 },
+    { time: '18:00', hour: 18, loadAvg: 0, throughputGbps: 0, ingressRate: 0, packetDropRate: 0 },
+    { time: '24:00', hour: 24, loadAvg: 0, throughputGbps: 0, ingressRate: 0, packetDropRate: 0 },
+  ];
+
+  const linePoints = activePoints.map((pt, idx) => {
+    const x = padX + (idx / (activePoints.length - 1)) * plotWidth;
     const y = padY + plotHeight - (pt.throughputGbps / maxVal) * plotHeight;
     return { x, y, pt };
   });
@@ -59,65 +80,156 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
   const linePathD = linePoints.map((p, idx) => `${idx === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
   const areaPathD = `${linePathD} L ${padX + plotWidth} ${padY + plotHeight} L ${padX} ${padY + plotHeight} Z`;
 
-  // Marker for incident at 14:18 UTC (point index 8 in mock data)
-  const incidentPoint = linePoints.find(p => p.pt.isIncidentMarker) || linePoints[8];
+  const activeIncident = activeIncidents[0];
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
-      {/* 1. Correlated Incident Alert Banner */}
-      <section className="incident-banner">
-        <div className="incident-banner-left">
-          <span className="incident-tag-p1">P1 CRITICAL</span>
-          <div>
-            <div className="incident-banner-title">
-              <ShieldAlert size={16} color="#E11D48" />
-              <span>Incident #INC-9402: Upstream Gateway Drop</span>
-              {acknowledged && (
-                <span className="metric-pill-emerald" style={{ marginLeft: '6px' }}>
-                  <Check size={11} /> Ack'd
+      {/* 1. ONBOARDING EMPTY STATE BANNER (When zero hosts are connected) */}
+      {isZeroState ? (
+        <section className="bg-white border border-slate-200 rounded-xl p-7 shadow-xs">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+            <div className="space-y-2 max-w-2xl">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-slate-300" />
+                <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                  Zero Infrastructure Connected Yet
                 </span>
-              )}
+              </div>
+              <h2 className="text-lg sm:text-xl font-bold text-slate-900 tracking-tight">
+                No Infrastructure Connected Yet
+              </h2>
+              <p className="text-xs sm:text-sm text-slate-600 leading-relaxed font-normal">
+                Deploy the RicozInfra telemetry collector daemon to your first server or Kubernetes cluster to stream real-time metrics.
+              </p>
+
+              {/* Command snippet with one-click copy */}
+              <div className="pt-2">
+                <div className="flex items-center gap-2 bg-slate-900 rounded-lg p-2.5 sm:p-3 text-white text-xs max-w-xl font-sans">
+                  <Terminal size={14} className="text-slate-400 shrink-0" />
+                  <code className="text-slate-200 overflow-x-auto whitespace-nowrap select-all font-sans text-xs flex-1">
+                    {curlCommand}
+                  </code>
+                  <button
+                    onClick={copySnippet}
+                    className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white rounded text-xs transition-colors flex items-center gap-1 shrink-0 cursor-pointer"
+                    title="Copy to clipboard"
+                  >
+                    {copiedSnippet ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
+                    <span>{copiedSnippet ? 'Copied' : 'Copy'}</span>
+                  </button>
+                </div>
+              </div>
             </div>
-            <div className="incident-banner-desc">
-              12 downstream pod alerts collapsed under 1 root cause: socket pool exhaustion on prod-edge-gw-01 (99.4% ML confidence)
+
+            {/* Actions */}
+            <div className="flex flex-col sm:flex-row lg:flex-col gap-2.5 shrink-0">
+              <button
+                onClick={() => setIsAddHostModalOpen(true)}
+                className="btn-crimson-primary text-xs justify-center"
+              >
+                <Plus size={14} />
+                <span>Add First Host / Download Agent</span>
+              </button>
+
+              <button
+                onClick={simulateAgentConnect}
+                className="btn-slate-secondary text-xs justify-center"
+                title="Connect an active agent with real-time heartbeat"
+              >
+                <Play size={12} className="text-emerald-500" />
+                <span>Simulate Agent Connection</span>
+              </button>
+
+              <button
+                onClick={loadRealFleetData}
+                className="px-3 py-1.5 text-xs text-slate-400 hover:text-slate-600 transition-colors text-center"
+              >
+                Inspect Populated Fleet Demo
+              </button>
             </div>
           </div>
-        </div>
+        </section>
+      ) : activeIncident ? (
+        /* Active Incident Banner (Shown only when real incident exists) */
+        <section className="incident-banner">
+          <div className="incident-banner-left">
+            <span className="incident-tag-p1">P1 CRITICAL</span>
+            <div>
+              <div className="incident-banner-title">
+                <ShieldAlert size={16} color="#E11D48" />
+                <span>Incident #{activeIncident.id}: {activeIncident.title}</span>
+                {acknowledged && (
+                  <span className="metric-pill-emerald" style={{ marginLeft: '6px' }}>
+                    <Check size={11} /> Ack'd
+                  </span>
+                )}
+              </div>
+              <div className="incident-banner-desc">
+                {activeIncident.rootCause} (99.4% ML confidence)
+              </div>
+            </div>
+          </div>
 
-        <div className="incident-actions">
-          <button 
-            className="btn-crimson-primary" 
-            onClick={() => onNavigate('incidents')}
+          <div className="incident-actions">
+            <button 
+              className="btn-crimson-primary" 
+              onClick={() => onNavigate('incidents')}
+            >
+              <AlertTriangle size={13} />
+              <span>Open Incident War Room</span>
+            </button>
+
+            <button 
+              className="btn-slate-secondary" 
+              onClick={onOpenRunbookModal}
+            >
+              <Play size={13} color="#10B981" />
+              <span>Auto-Runbook Ready</span>
+            </button>
+
+            <button 
+              className={acknowledged ? "btn-ghost-muted" : "btn-slate-secondary"}
+              onClick={() => setAcknowledged(!acknowledged)}
+            >
+              {acknowledged ? (
+                <>
+                  <Check size={13} color="#10B981" />
+                  <span>Ack'd</span>
+                </>
+              ) : (
+                <span>Acknowledge</span>
+              )}
+            </button>
+          </div>
+        </section>
+      ) : (
+        /* Positive Empty State: All Systems Operational */
+        <section className="bg-white border border-slate-200 rounded-xl p-5 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-600">
+              <Check size={16} />
+            </div>
+            <div>
+              <div className="text-sm font-semibold text-slate-900 flex items-center gap-2">
+                <span>All Systems Operational</span>
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              </div>
+              <div className="text-xs text-slate-500 mt-0.5">
+                Zero active P1/P2 incidents detected across {hosts.length} monitored hosts.
+              </div>
+            </div>
+          </div>
+
+          <button
+            onClick={resetToZeroState}
+            className="text-xs text-slate-400 hover:text-slate-600 transition-colors"
           >
-            <AlertTriangle size={13} />
-            <span>Open Incident War Room</span>
+            Reset to Zero State
           </button>
+        </section>
+      )}
 
-          <button 
-            className="btn-slate-secondary" 
-            onClick={onOpenRunbookModal}
-          >
-            <Play size={13} color="#10B981" />
-            <span>Auto-Runbook Ready</span>
-          </button>
-
-          <button 
-            className={acknowledged ? "btn-ghost-muted" : "btn-slate-secondary"}
-            onClick={() => setAcknowledged(!acknowledged)}
-          >
-            {acknowledged ? (
-              <>
-                <Check size={13} color="#10B981" />
-                <span>Ack'd</span>
-              </>
-            ) : (
-              <span>Acknowledge</span>
-            )}
-          </button>
-        </div>
-      </section>
-
-      {/* 2. 4 Key Metric Cards (Row layout, spacious white cards with subtle slate-200 border) */}
+      {/* 2. 4 Key Metric Cards (Dynamic Zero-Data or Live Data) */}
       <section style={{
         display: 'grid',
         gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
@@ -129,24 +241,33 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
             <span style={{ fontSize: '12px', fontWeight: 500, color: '#64748B' }}>
               Fleet Nodes Active
             </span>
-            <span className="metric-pill-emerald">
-              <span className="pulse-dot-emerald" />
-              <span>Nominal</span>
-            </span>
+            {isZeroState ? (
+              <span className="metric-pill-slate">
+                <span>Awaiting Agent</span>
+              </span>
+            ) : (
+              <span className="metric-pill-emerald">
+                <span className="pulse-dot-emerald" />
+                <span>Nominal</span>
+              </span>
+            )}
           </div>
 
           <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
             <span style={{ fontSize: '28px', fontWeight: 600, color: '#0F172A', letterSpacing: '-0.03em' }}>
-              {FLEET_METRICS.activeNodes.toLocaleString()}
+              {isZeroState ? '0' : hosts.length.toLocaleString()}
             </span>
             <span style={{ fontSize: '15px', fontWeight: 400, color: '#94A3B8' }}>
-              / {FLEET_METRICS.totalNodes.toLocaleString()}
+              / {isZeroState ? '0' : hosts.length.toLocaleString()}
             </span>
           </div>
 
           <div style={{ marginTop: '12px', fontSize: '12px', color: '#64748B' }}>
-            <span>99.72% operational capacity</span>
-            <span style={{ color: '#94A3B8', marginLeft: '6px' }}>• 4 standby nodes</span>
+            {isZeroState ? (
+              <span>0 Active Nodes registered</span>
+            ) : (
+              <span>100% operational capacity • 0 unreachable</span>
+            )}
           </div>
         </div>
 
@@ -157,17 +278,17 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
               Fleet Avg CPU Load
             </span>
             <span className="metric-pill-slate">
-              <span>±3.8% σ</span>
+              <span>{isZeroState ? 'No Telemetry' : '±3.8% σ'}</span>
             </span>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div>
               <div style={{ fontSize: '28px', fontWeight: 600, color: '#0F172A', letterSpacing: '-0.03em' }}>
-                {FLEET_METRICS.avgCpuLoad}%
+                {isZeroState ? '—' : `${hosts[0]?.cpuLoad || 44.6}%`}
               </div>
               <div style={{ fontSize: '12px', color: '#64748B', marginTop: '4px' }}>
-                Peak: <strong style={{ color: '#0F172A', fontWeight: 600 }}>{FLEET_METRICS.cpuPeak}%</strong> (prod-edge-gw-01)
+                {isZeroState ? 'Awaiting metrics stream' : `Peak: ${hosts[0]?.cpuLoad || 44.6}% (${hosts[0]?.hostname || 'node-01'})`}
               </div>
             </div>
 
@@ -176,16 +297,10 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
               <path
                 d={sparklineD}
                 fill="none"
-                stroke="#64748B"
+                stroke="#94A3B8"
                 strokeWidth="1.75"
                 strokeLinecap="round"
                 strokeLinejoin="round"
-              />
-              <circle
-                cx={svgSparkWidth}
-                cy={svgSparkHeight - ((sparkPoints[sparkPoints.length - 1] - minSpark) / (maxSpark - minSpark)) * svgSparkHeight}
-                r="3"
-                fill="#334155"
               />
             </svg>
           </div>
@@ -198,23 +313,24 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
               Total Throughput
             </span>
             <span className="metric-pill-slate">
-              <span>BGP Edge Mesh</span>
+              <span>{isZeroState ? 'Zero Ingress' : 'BGP Edge Mesh'}</span>
             </span>
           </div>
 
           <div style={{ fontSize: '28px', fontWeight: 600, color: '#0F172A', letterSpacing: '-0.03em' }}>
-            {FLEET_METRICS.totalThroughputGbps} <span style={{ fontSize: '18px', fontWeight: 500, color: '#64748B' }}>Gbps</span>
+            {isZeroState ? '0.0' : (hosts[0]?.rxGbps ? `${(hosts[0].rxGbps + (hosts[0].txGbps || 0)).toFixed(1)}` : '148.6')}{' '}
+            <span style={{ fontSize: '18px', fontWeight: 500, color: '#64748B' }}>Gbps</span>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginTop: '12px', fontSize: '12px', color: '#64748B' }}>
             <div>
               <span style={{ color: '#94A3B8' }}>Rx: </span>
-              <strong style={{ color: '#0F172A', fontWeight: 600 }}>82.0 Gbps</strong>
+              <strong style={{ color: '#0F172A', fontWeight: 600 }}>{isZeroState ? '—' : '82.0 Gbps'}</strong>
             </div>
             <span style={{ color: '#CBD5E1' }}>•</span>
             <div>
               <span style={{ color: '#94A3B8' }}>Tx: </span>
-              <strong style={{ color: '#0F172A', fontWeight: 600 }}>66.6 Gbps</strong>
+              <strong style={{ color: '#0F172A', fontWeight: 600 }}>{isZeroState ? '—' : '66.6 Gbps'}</strong>
             </div>
           </div>
         </div>
@@ -225,55 +341,67 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
             <span style={{ fontSize: '12px', fontWeight: 500, color: '#64748B' }}>
               Correlated Incidents
             </span>
-            <span className="metric-pill-crimson">
-              <span className="pulse-dot-crimson" />
-              <span>1 Active P1</span>
-            </span>
+            {activeIncidents.length > 0 ? (
+              <span className="metric-pill-crimson">
+                <span className="pulse-dot-crimson" />
+                <span>{activeIncidents.length} Active</span>
+              </span>
+            ) : (
+              <span className="metric-pill-emerald">
+                <span className="pulse-dot-emerald" />
+                <span>Nominal</span>
+              </span>
+            )}
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
-            <span style={{ fontSize: '28px', fontWeight: 600, color: '#E11D48', letterSpacing: '-0.03em' }}>
-              1
-            </span>
-            <span style={{ fontSize: '13px', color: '#64748B' }}>
-              Active Critical Outage
-            </span>
+          <div style={{ fontSize: '28px', fontWeight: 600, color: '#0F172A', letterSpacing: '-0.03em' }}>
+            {activeIncidents.length}{' '}
+            <span style={{ fontSize: '18px', fontWeight: 400, color: '#94A3B8' }}>Active</span>
           </div>
 
           <div style={{ marginTop: '12px', fontSize: '12px', color: '#64748B' }}>
-            <span>12 alerts grouped under root cause</span>
+            {activeIncidents.length > 0 ? '12 downstream alerts collapsed' : 'Zero outages across registered nodes'}
           </div>
         </div>
       </section>
 
-      {/* 3. 24-Hour Fleet Health Chart */}
-      <section className="card-white" style={{ padding: '28px', position: 'relative' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px', flexWrap: 'wrap', gap: '12px' }}>
+      {/* 3. 24-Hour Fleet Health & Workload Ingestion Chart */}
+      <section className="card-white" style={{ padding: '28px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px', flexWrap: 'wrap', gap: '16px' }}>
           <div>
             <h2 style={{ fontSize: '16px', fontWeight: 600, color: '#0F172A' }}>
-              24-Hour Fleet Health & Workload Ingestion
+              Fleet Telemetry &amp; Workload Ingestion ({selectedTimeframe})
             </h2>
-            <p style={{ fontSize: '12.5px', color: '#64748B', marginTop: '2px' }}>
-              Continuous fleet ingress and throughput monitoring across 1,428 hosts with ML anomaly correlation.
+            <p style={{ fontSize: '12.5px', color: '#64748B', marginTop: '3px' }}>
+              {isZeroState
+                ? 'Awaiting first telemetry heartbeat from installed collector agents.'
+                : 'Continuous telemetry ingestion across registered hosts with ML anomaly correlation.'}
             </p>
           </div>
 
-          {/* Timeframe Selector Pills */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#F8FAFC', padding: '3px', borderRadius: '8px', border: '1px solid #E2E8F0' }}>
+          {/* Timeframe pill selector */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            background: '#FFFFFF',
+            border: '1px solid #E2E8F0',
+            borderRadius: '8px',
+            padding: '3px'
+          }}>
             {(['1h', '6h', '24h', '7d'] as const).map((tf) => (
               <button
                 key={tf}
                 onClick={() => setSelectedTimeframe(tf)}
                 style={{
-                  padding: '4px 10px',
+                  padding: '4px 12px',
                   borderRadius: '6px',
-                  fontSize: '11.5px',
+                  fontSize: '12px',
                   fontWeight: selectedTimeframe === tf ? 600 : 500,
                   color: selectedTimeframe === tf ? '#0F172A' : '#64748B',
-                  background: selectedTimeframe === tf ? '#FFFFFF' : 'transparent',
-                  boxShadow: selectedTimeframe === tf ? '0 1px 2px rgba(0,0,0,0.05)' : 'none',
+                  background: selectedTimeframe === tf ? '#F1F5F9' : 'transparent',
                   border: 'none',
-                  cursor: 'pointer'
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease'
                 }}
               >
                 {tf}
@@ -282,20 +410,17 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
           </div>
         </div>
 
-        {/* SVG Chart Container */}
+        {/* Clean Chart Canvas */}
         <div style={{ position: 'relative', width: '100%', overflowX: 'auto' }}>
-          <svg
-            viewBox={`0 0 ${chartWidth} ${chartHeight}`}
-            style={{ width: '100%', height: 'auto', display: 'block', minWidth: '700px' }}
-          >
+          <svg viewBox={`0 0 ${chartWidth} ${chartHeight}`} style={{ width: '100%', height: 'auto', display: 'block' }}>
             <defs>
-              <linearGradient id="lightAreaGrad" x1="0" y1="0" x2="0" y2="1">
+              <linearGradient id="ingressGradient" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor="#334155" stopOpacity="0.08" />
                 <stop offset="100%" stopColor="#334155" stopOpacity="0.0" />
               </linearGradient>
             </defs>
 
-            {/* Subtle Light-Gray Grid Lines (#F1F5F9) */}
+            {/* Horizontal Gridlines */}
             {[0, 40, 80, 120, 160].map((val) => {
               const y = padY + plotHeight - (val / maxVal) * plotHeight;
               return (
@@ -310,7 +435,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
                   />
                   <text
                     x={padX - 10}
-                    y={y + 3.5}
+                    y={y + 4}
                     fontSize="10"
                     fill="#94A3B8"
                     textAnchor="end"
@@ -322,249 +447,131 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
               );
             })}
 
-            {/* Area Fill */}
-            <path d={areaPathD} fill="url(#lightAreaGrad)" />
-
-            {/* Single Clean Slate-700 Stroke Line representing workload ingestion */}
-            <path
-              d={linePathD}
-              fill="none"
-              stroke="#334155"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-
-            {/* Single Vertical Marker at 14:18 UTC indicating incident anomaly */}
-            {incidentPoint && (
-              <g>
+            {isZeroState ? (
+              /* Flat baseline when zero data */
+              <>
                 <line
-                  x1={incidentPoint.x}
-                  y1={padY}
-                  x2={incidentPoint.x}
+                  x1={padX}
+                  y1={padY + plotHeight}
+                  x2={chartWidth - padX}
                   y2={padY + plotHeight}
-                  stroke="#E11D48"
-                  strokeWidth="1.5"
+                  stroke="#CBD5E1"
+                  strokeWidth="2"
                   strokeDasharray="4 4"
                 />
-
-                {/* Anomaly Badge */}
-                <rect
-                  x={incidentPoint.x - 52}
-                  y={padY - 22}
-                  width="104"
-                  height="20"
-                  rx="4"
-                  fill="#FFF1F2"
-                  stroke="#FECDD3"
-                  strokeWidth="1"
-                />
                 <text
-                  x={incidentPoint.x}
-                  y={padY - 9}
-                  fill="#E11D48"
-                  fontSize="10"
-                  fontWeight="600"
+                  x={chartWidth / 2}
+                  y={chartHeight / 2}
                   textAnchor="middle"
-                >
-                  14:18 UTC • Anomaly
-                </text>
-
-                {/* Pulsing incident point */}
-                <circle
-                  cx={incidentPoint.x}
-                  cy={incidentPoint.y}
-                  r="5"
-                  fill="#E11D48"
-                  stroke="#FFFFFF"
-                  strokeWidth="2"
-                />
-              </g>
-            )}
-
-            {/* Hover Circles and Time Labels */}
-            {linePoints.map((p, idx) => (
-              <g key={idx}>
-                {/* Time Axis Labels */}
-                <text
-                  x={p.x}
-                  y={chartHeight - 8}
-                  fontSize="10"
                   fill="#94A3B8"
-                  textAnchor="middle"
+                  fontSize="13"
                   fontWeight="500"
                 >
-                  {p.pt.time}
+                  Awaiting first telemetry heartbeat...
                 </text>
-
-                {/* Hover trigger circle */}
-                <circle
-                  cx={p.x}
-                  cy={p.y}
-                  r="12"
-                  fill="transparent"
-                  style={{ cursor: 'pointer' }}
-                  onMouseEnter={() => setHoveredPoint(p.pt)}
-                  onMouseLeave={() => setHoveredPoint(null)}
+              </>
+            ) : (
+              /* Real or simulated data line */
+              <>
+                <path d={areaPathD} fill="url(#ingressGradient)" />
+                <path
+                  d={linePathD}
+                  fill="none"
+                  stroke="#334155"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
                 />
+              </>
+            )}
 
-                {/* Interactive indicator dot on hover */}
-                {hoveredPoint?.time === p.pt.time && (
-                  <circle
-                    cx={p.x}
-                    cy={p.y}
-                    r="4"
-                    fill="#0F172A"
-                    stroke="#FFFFFF"
-                    strokeWidth="2"
-                  />
-                )}
-              </g>
+            {/* X-axis time labels */}
+            {linePoints.map((p, idx) => (
+              <text
+                key={idx}
+                x={p.x}
+                y={chartHeight - 8}
+                fontSize="10"
+                fill="#94A3B8"
+                textAnchor="middle"
+                fontWeight="500"
+              >
+                {p.pt.time}
+              </text>
             ))}
           </svg>
-
-          {/* Interactive Tooltip Popover */}
-          {hoveredPoint && (
-            <div
-              className="chart-tooltip-popover"
-              style={{
-                top: '50%',
-                left: '50%',
-                transform: 'translate(-50%, -50%)',
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                <span style={{ fontSize: '11px', fontWeight: 600, color: '#0F172A' }}>
-                  {hoveredPoint.time} UTC
-                </span>
-                {hoveredPoint.isIncidentMarker && (
-                  <span className="metric-pill-crimson" style={{ fontSize: '9px', padding: '1px 5px' }}>
-                    Incident Spike
-                  </span>
-                )}
-              </div>
-              <div style={{ fontSize: '12px', color: '#475569' }}>
-                Throughput: <strong style={{ color: '#0F172A', fontWeight: 600 }}>{hoveredPoint.throughputGbps} Gbps</strong>
-              </div>
-              <div style={{ fontSize: '12px', color: '#475569' }}>
-                Fleet Load: <strong style={{ color: '#0F172A', fontWeight: 600 }}>{hoveredPoint.loadAvg}%</strong>
-              </div>
-            </div>
-          )}
         </div>
       </section>
 
-      {/* 4. Bottom Quick Jump Cards: Clean white tiles with subtle hover lift */}
+      {/* 4. Quick Jump Cards */}
       <section style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
-        gap: '24px'
+        gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
+        gap: '20px'
       }}>
-        {/* Quick Jump 1: Topology Map */}
         <div 
           className="card-white" 
-          onClick={() => onNavigate('topology')}
           style={{ padding: '24px', cursor: 'pointer' }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <div style={{
-                width: '36px',
-                height: '36px',
-                borderRadius: '8px',
-                background: '#F8FAFC',
-                border: '1px solid #E2E8F0',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: '#0F172A'
-              }}>
-                <GitFork size={18} />
-              </div>
-              <div>
-                <h3 style={{ fontSize: '14.5px', fontWeight: 600, color: '#0F172A' }}>
-                  Topology Map
-                </h3>
-                <span style={{ fontSize: '11.5px', color: '#64748B' }}>5 Tiers • Ingress to Data</span>
-              </div>
-            </div>
-            <ArrowRight size={16} style={{ color: '#94A3B8' }} />
-          </div>
-          <p style={{ fontSize: '12.5px', color: '#64748B', lineHeight: 1.5 }}>
-            Inspect full traffic pathways and degraded crimson links between prod-edge-gw-01 and downstream Kubernetes pods.
-          </p>
-        </div>
-
-        {/* Quick Jump 2: Host Inventory */}
-        <div 
-          className="card-white" 
           onClick={() => onNavigate('hosts')}
-          style={{ padding: '24px', cursor: 'pointer' }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <div style={{
-                width: '36px',
-                height: '36px',
-                borderRadius: '8px',
-                background: '#F8FAFC',
-                border: '1px solid #E2E8F0',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: '#0F172A'
-              }}>
-                <Server size={18} />
-              </div>
-              <div>
-                <h3 style={{ fontSize: '14.5px', fontWeight: 600, color: '#0F172A' }}>
-                  Host Inventory
-                </h3>
-                <span style={{ fontSize: '11.5px', color: '#64748B' }}>1,428 Monitored Instances</span>
-              </div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Server size={16} color="#0F172A" />
+              <h3 style={{ fontSize: '14.5px', fontWeight: 600, color: '#0F172A' }}>
+                Host Inventory
+              </h3>
             </div>
-            <ArrowRight size={16} style={{ color: '#94A3B8' }} />
+            <ArrowRight size={14} color="#94A3B8" />
           </div>
-          <p style={{ fontSize: '12.5px', color: '#64748B', lineHeight: 1.5 }}>
-            Filter by Bare-Metal, VMware ESXi, and Kubernetes. Open 420px slide-over inspector drawer to launch SSH console.
+          <p style={{ fontSize: '12px', color: '#64748B', lineHeight: '1.5' }}>
+            {hosts.length === 0 ? 'No registered nodes yet. Deploy the collector agent.' : `Inspect ${hosts.length} monitored bare-metal servers, VMs, and pods.`}
           </p>
         </div>
 
-        {/* Quick Jump 3: Incident War Room */}
         <div 
           className="card-white" 
-          onClick={() => onNavigate('incidents')}
           style={{ padding: '24px', cursor: 'pointer' }}
+          onClick={() => onNavigate('topology')}
         >
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <div style={{
-                width: '36px',
-                height: '36px',
-                borderRadius: '8px',
-                background: '#FFF1F2',
-                border: '1px solid #FECDD3',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: '#E11D48'
-              }}>
-                <ShieldAlert size={18} />
-              </div>
-              <div>
-                <h3 style={{ fontSize: '14.5px', fontWeight: 600, color: '#0F172A' }}>
-                  Incident War Room
-                </h3>
-                <span style={{ fontSize: '11.5px', color: '#E11D48', fontWeight: 600 }}>#INC-9402 P1 Active</span>
-              </div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <GitFork size={16} color="#0F172A" />
+              <h3 style={{ fontSize: '14.5px', fontWeight: 600, color: '#0F172A' }}>
+                Topology Map
+              </h3>
             </div>
-            <ArrowRight size={16} style={{ color: '#94A3B8' }} />
+            <ArrowRight size={14} color="#94A3B8" />
           </div>
-          <p style={{ fontSize: '12.5px', color: '#64748B', lineHeight: 1.5 }}>
-            Review 99.4% confidence ML alert deduplication, blast radius matrix, and execute autonomous self-healing runbook.
+          <p style={{ fontSize: '12px', color: '#64748B', lineHeight: '1.5' }}>
+            Interactive 4-tier service mesh tracing ingress routes and dependencies.
+          </p>
+        </div>
+
+        <div 
+          className="card-white" 
+          style={{ padding: '24px', cursor: 'pointer' }}
+          onClick={() => onNavigate('runbooks')}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <ShieldAlert size={16} color="#0F172A" />
+              <h3 style={{ fontSize: '14.5px', fontWeight: 600, color: '#0F172A' }}>
+                Autonomous Runbooks
+              </h3>
+            </div>
+            <ArrowRight size={14} color="#94A3B8" />
+          </div>
+          <p style={{ fontSize: '12px', color: '#64748B', lineHeight: '1.5' }}>
+            Event-driven self-healing policies mitigating threshold breaches in &lt;200ms.
           </p>
         </div>
       </section>
+
+      {/* Add Host Modal */}
+      <AddHostModal
+        isOpen={isAddHostModalOpen}
+        onClose={() => setIsAddHostModalOpen(false)}
+      />
     </div>
   );
 };

@@ -1,13 +1,16 @@
 import React, { useState, useRef } from 'react';
 import type { TopologyNode } from '../types';
 import { TOPOLOGY_NODES, TOPOLOGY_EDGES } from '../data/mockData';
+import { useFleet } from '../context/FleetContext';
+import { AddHostModal } from '../components/AddHostModal';
 import { 
   ZoomIn, 
   ZoomOut, 
   RotateCcw, 
   AlertTriangle, 
-  X,
-  CheckCircle2
+  GitFork,
+  Plus,
+  Play
 } from 'lucide-react';
 
 interface TopologyViewProps {
@@ -16,15 +19,17 @@ interface TopologyViewProps {
 }
 
 export const TopologyView: React.FC<TopologyViewProps> = ({
-  onSelectHost,
-  onNavigateToIncidents,
+  onSelectHost: _onSelectHost,
+  onNavigateToIncidents: _onNavigateToIncidents,
 }) => {
+  const { isZeroState, simulateAgentConnect } = useFleet();
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>('node-edge-gw-01');
   const [highlightDegradedOnly, setHighlightDegradedOnly] = useState(false);
+  const [isAddHostModalOpen, setIsAddHostModalOpen] = useState(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -53,20 +58,16 @@ export const TopologyView: React.FC<TopologyViewProps> = ({
 
   const handleMouseUp = () => setIsDragging(false);
 
-  // Selected node lookup
-  const selectedNode = TOPOLOGY_NODES.find((n) => n.id === selectedNodeId) || null;
+  // Selected node lookup (available for future detail panel)
+  TOPOLOGY_NODES.find((n) => n.id === selectedNodeId);
 
   // Node position map
   const nodeMap = new Map<string, TopologyNode>();
   TOPOLOGY_NODES.forEach((n) => nodeMap.set(n.id, n));
 
-  // Architectural tiers: Ingress Edge -> API Gateways -> Compute Mesh -> Data Stores
-  const tiers = [
-    { tier: 1, name: 'Ingress Edge', xRange: 160 },
-    { tier: 2, name: 'API Gateways', xRange: 440 },
-    { tier: 3, name: 'Compute Mesh', xRange: 740 },
-    { tier: 4, name: 'Data Stores', xRange: 1040 },
-  ];
+  // Architectural tiers (used for layout reference)
+  // Tier 1: Ingress Edge (x:160), Tier 2: API Gateways (x:440)
+  // Tier 3: Compute Mesh (x:740), Tier 4: Data Stores (x:1040)
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', position: 'relative' }}>
@@ -80,7 +81,7 @@ export const TopologyView: React.FC<TopologyViewProps> = ({
       }}>
         <div>
           <h1 style={{ fontSize: '20px', fontWeight: 600, color: '#0F172A' }}>
-            Topology Canvas & Service Dependencies
+            Topology Canvas &amp; Service Dependencies
           </h1>
           <p style={{ fontSize: '13px', color: '#64748B', marginTop: '3px' }}>
             Interactive dependency mesh from Ingress Edge down to Compute Mesh and Data Stores.
@@ -88,14 +89,16 @@ export const TopologyView: React.FC<TopologyViewProps> = ({
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <button
-            className={highlightDegradedOnly ? 'btn-crimson-primary' : 'btn-slate-secondary'}
-            onClick={() => setHighlightDegradedOnly(!highlightDegradedOnly)}
-            style={{ fontSize: '12px', padding: '6px 12px' }}
-          >
-            <AlertTriangle size={13} />
-            <span>Highlight Degraded Path Only</span>
-          </button>
+          {!isZeroState && (
+            <button
+              className={highlightDegradedOnly ? 'btn-crimson-primary' : 'btn-slate-secondary'}
+              onClick={() => setHighlightDegradedOnly(!highlightDegradedOnly)}
+              style={{ fontSize: '12px', padding: '6px 12px' }}
+            >
+              <AlertTriangle size={13} />
+              <span>Highlight Degraded Path Only</span>
+            </button>
+          )}
 
           {/* Zoom / Pan Controls */}
           <div style={{
@@ -168,257 +171,193 @@ export const TopologyView: React.FC<TopologyViewProps> = ({
         style={{
           width: '100%',
           height: '620px',
-          overflow: 'hidden',
           position: 'relative',
+          overflow: 'hidden',
           cursor: isDragging ? 'grabbing' : 'grab',
-          userSelect: 'none',
         }}
       >
-        {/* Tier Header Markers */}
-        <div style={{
-          position: 'absolute',
-          top: '14px',
-          left: 0,
-          right: 0,
-          display: 'flex',
-          pointerEvents: 'none',
-          zIndex: 5,
-          transform: `translateX(${pan.x}px) scale(${zoom})`,
-          transformOrigin: 'top left',
-        }}>
-          {tiers.map((t) => (
-            <div
-              key={t.tier}
-              style={{
-                position: 'absolute',
-                left: `${t.xRange - 70}px`,
-                background: '#FFFFFF',
-                border: '1px solid #E2E8F0',
-                borderRadius: '6px',
-                padding: '4px 10px',
-                fontSize: '11px',
-                fontWeight: 600,
-                color: '#64748B',
-                boxShadow: '0 1px 3px rgba(0,0,0,0.03)',
-                whiteSpace: 'nowrap'
-              }}
-            >
-              {t.name}
-            </div>
-          ))}
-        </div>
-
-        {/* Pan & Zoom Transform World */}
-        <div
-          style={{
+        {isZeroState ? (
+          /* Empty State: Topology Prompt */
+          <div style={{
             position: 'absolute',
-            width: '1500px',
-            height: '650px',
-            transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
-            transformOrigin: 'top left',
-            transition: isDragging ? 'none' : 'transform 0.05s ease-out',
-          }}
-        >
-          {/* SVG Connection Lines */}
-          <svg
+            inset: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '24px',
+            textAlign: 'center',
+          }}>
+            <div style={{
+              background: '#FFFFFF',
+              border: '1px solid #E2E8F0',
+              borderRadius: '16px',
+              padding: '36px',
+              maxWidth: '520px',
+              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.04)',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: '14px',
+            }}>
+              <div style={{
+                width: '48px',
+                height: '48px',
+                borderRadius: '12px',
+                background: '#F8FAFC',
+                border: '1px solid #E2E8F0',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#64748B'
+              }}>
+                <GitFork size={22} />
+              </div>
+
+              <h3 style={{ fontSize: '16px', fontWeight: 600, color: '#0F172A' }}>
+                Topology Mesh Awaiting Host Connection
+              </h3>
+
+              <p style={{ fontSize: '13px', color: '#64748B', lineHeight: 1.5 }}>
+                Topology will automatically map once agent telemetry is received from at least one ingress or compute node.
+              </p>
+
+              <div style={{ display: 'flex', gap: '10px', marginTop: '6px' }}>
+                <button
+                  onClick={() => setIsAddHostModalOpen(true)}
+                  className="btn-crimson-primary text-xs"
+                >
+                  <Plus size={14} />
+                  <span>Deploy First Agent</span>
+                </button>
+
+                <button
+                  onClick={simulateAgentConnect}
+                  className="btn-slate-secondary text-xs"
+                >
+                  <Play size={12} className="text-emerald-500" />
+                  <span>Simulate Connection</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : (
+          /* Live Canvas Render */
+          <div
             style={{
               position: 'absolute',
               top: 0,
               left: 0,
-              width: '1500px',
-              height: '650px',
-              pointerEvents: 'none',
-              zIndex: 1,
+              width: '1280px',
+              height: '620px',
+              transformOrigin: '0 0',
+              transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+              transition: isDragging ? 'none' : 'transform 0.05s ease-out',
             }}
           >
-            {TOPOLOGY_EDGES.map((edge) => {
-              const src = nodeMap.get(edge.source);
-              const tgt = nodeMap.get(edge.target);
-              if (!src || !tgt) return null;
+            {/* SVG Connection Lines */}
+            <svg style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
+              <defs>
+                <marker id="arrowNominal" viewBox="0 0 10 10" refX="28" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                  <path d="M 0 1 L 8 5 L 0 9 z" fill="#CBD5E1" />
+                </marker>
+                <marker id="arrowDegraded" viewBox="0 0 10 10" refX="28" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                  <path d="M 0 1 L 8 5 L 0 9 z" fill="#E11D48" />
+                </marker>
+              </defs>
 
-              const isDegraded = edge.status === 'degraded';
-              if (highlightDegradedOnly && !isDegraded) return null;
+              {TOPOLOGY_EDGES.map((edge) => {
+                const src = nodeMap.get(edge.source);
+                const tgt = nodeMap.get(edge.target);
+                if (!src || !tgt) return null;
 
-              const srcX = src.x + 90;
-              const srcY = src.y + 40;
-              const tgtX = tgt.x - 90;
-              const tgtY = tgt.y + 40;
-              const midX = (srcX + tgtX) / 2;
+                const isDegraded = edge.status === 'degraded';
+                if (highlightDegradedOnly && !isDegraded) return null;
 
-              const pathD = `M ${srcX} ${srcY} C ${midX} ${srcY}, ${midX} ${tgtY}, ${tgtX} ${tgtY}`;
+                const startX = src.x + 85;
+                const startY = src.y + 40;
+                const endX = tgt.x - 85;
+                const endY = tgt.y + 40;
+                const midX = (startX + endX) / 2;
+
+                const pathData = `M ${startX} ${startY} C ${midX} ${startY}, ${midX} ${endY}, ${endX} ${endY}`;
+
+                return (
+                  <g key={edge.id}>
+                    <path
+                      d={pathData}
+                      fill="none"
+                      stroke={isDegraded ? '#E11D48' : '#CBD5E1'}
+                      strokeWidth={isDegraded ? 2.5 : 1.5}
+                      strokeDasharray={isDegraded ? '5 5' : 'none'}
+                      markerEnd={isDegraded ? 'url(#arrowDegraded)' : 'url(#arrowNominal)'}
+                    />
+                    {edge.latencyAnnotation && (
+                      <g transform={`translate(${midX}, ${(startY + endY) / 2 - 8})`}>
+                        <rect x="-28" y="-10" width="56" height="18" rx="4" fill={isDegraded ? '#FFF1F2' : '#FFFFFF'} stroke={isDegraded ? '#FECDD3' : '#E2E8F0'} />
+                        <text x="0" y="3" fill={isDegraded ? '#E11D48' : '#64748B'} fontSize="10" fontWeight="600" textAnchor="middle">
+                          {edge.latencyAnnotation}
+                        </text>
+                      </g>
+                    )}
+                  </g>
+                );
+              })}
+            </svg>
+
+            {/* Nodes */}
+            {TOPOLOGY_NODES.map((node) => {
+              const isSelected = selectedNodeId === node.id;
+              const isCritical = node.status === 'critical';
 
               return (
-                <g key={edge.id}>
-                  {/* Connection Path: Slate-300 for nominal, Crimson for degraded */}
-                  <path
-                    d={pathD}
-                    fill="none"
-                    stroke={isDegraded ? '#E11D48' : '#CBD5E1'}
-                    strokeWidth={isDegraded ? 2.5 : 1.5}
-                    strokeDasharray={isDegraded ? '5 5' : 'none'}
-                  />
+                <div
+                  key={node.id}
+                  className="topology-node-card"
+                  onClick={() => setSelectedNodeId(node.id)}
+                  style={{
+                    position: 'absolute',
+                    left: `${node.x - 85}px`,
+                    top: `${node.y}px`,
+                    width: '170px',
+                    background: '#FFFFFF',
+                    border: isSelected ? '2px solid #0F172A' : isCritical ? '1px solid #FECDD3' : '1px solid #E2E8F0',
+                    borderRadius: '10px',
+                    padding: '12px 14px',
+                    boxShadow: isSelected ? '0 8px 18px -4px rgba(15, 23, 42, 0.12)' : '0 2px 5px rgba(0,0,0,0.03)',
+                    cursor: 'pointer',
+                    userSelect: 'none',
+                    zIndex: isSelected ? 20 : 10,
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span className={isCritical ? 'pulse-dot-crimson' : 'pulse-dot-emerald'} />
+                      <span style={{ fontSize: '11px', color: '#64748B', fontWeight: 500 }}>
+                        {node.role}
+                      </span>
+                    </div>
+                  </div>
 
-                  {/* Degraded Badge: "182ms p99" in Crimson */}
-                  {isDegraded && (
-                    <g transform={`translate(${midX}, ${(srcY + tgtY) / 2})`}>
-                      <rect
-                        x="-38"
-                        y="-12"
-                        width="76"
-                        height="22"
-                        rx="4"
-                        fill="#FFF1F2"
-                        stroke="#FECDD3"
-                        strokeWidth="1"
-                      />
-                      <text
-                        x="0"
-                        y="3"
-                        fill="#E11D48"
-                        fontSize="10"
-                        fontWeight="700"
-                        textAnchor="middle"
-                      >
-                        182ms p99
-                      </text>
-                    </g>
-                  )}
-                </g>
+                  <div style={{ fontSize: '12.5px', fontWeight: 600, color: '#0F172A', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {node.label}
+                  </div>
+
+                  <div style={{ marginTop: '8px', paddingTop: '6px', borderTop: '1px solid #F1F5F9', display: 'flex', justifyContent: 'space-between', fontSize: '10.5px' }}>
+                    <span style={{ color: '#94A3B8' }}>CPU: <strong style={{ color: isCritical ? '#E11D48' : '#0F172A' }}>{node.cpuPercent}%</strong></span>
+                    <span style={{ color: '#94A3B8' }}>p99: <strong style={{ color: isCritical ? '#E11D48' : '#0F172A' }}>{node.p99LatencyMs}ms</strong></span>
+                  </div>
+                </div>
               );
             })}
-          </svg>
-
-          {/* Topology Node Cards: Crisp White Cards with Thin Slate Borders */}
-          {TOPOLOGY_NODES.map((node) => {
-            const isSelected = selectedNodeId === node.id;
-            const isCritical = node.status === 'critical';
-
-            return (
-              <div
-                key={node.id}
-                className="topology-node-card"
-                onClick={() => setSelectedNodeId(node.id)}
-                style={{
-                  position: 'absolute',
-                  left: `${node.x - 90}px`,
-                  top: `${node.y}px`,
-                  width: '180px',
-                  background: '#FFFFFF',
-                  border: isCritical 
-                    ? '1.5px solid #E11D48' 
-                    : isSelected 
-                      ? '1.5px solid #0F172A' 
-                      : '1px solid #E2E8F0',
-                  borderRadius: '10px',
-                  padding: '12px 14px',
-                  boxShadow: isSelected 
-                    ? '0 6px 16px rgba(0, 0, 0, 0.08)' 
-                    : '0 1px 3px rgba(0, 0, 0, 0.03)',
-                  cursor: 'pointer',
-                  zIndex: isSelected ? 10 : 2,
-                  transition: 'all 0.15s ease',
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
-                  <span style={{ fontSize: '10px', fontWeight: 600, color: '#94A3B8', textTransform: 'uppercase' }}>
-                    {node.role}
-                  </span>
-                  <span className={isCritical ? 'pulse-dot-crimson' : 'pulse-dot-emerald'} />
-                </div>
-
-                <div style={{ fontSize: '13px', fontWeight: 600, color: '#0F172A', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {node.label}
-                </div>
-
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '8px', fontSize: '11px', color: '#64748B' }}>
-                  <span>Load: <strong style={{ color: isCritical ? '#E11D48' : '#0F172A', fontWeight: 600 }}>{node.cpuPercent}%</strong></span>
-                  <span>{node.p99LatencyMs}ms</span>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Floating Selected Node Detail Card */}
-        {selectedNode && (
-          <div
-            style={{
-              position: 'absolute',
-              bottom: '20px',
-              right: '20px',
-              width: '320px',
-              background: '#FFFFFF',
-              border: '1px solid #E2E8F0',
-              borderRadius: '12px',
-              boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.08)',
-              padding: '18px',
-              zIndex: 20,
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span className={selectedNode.status === 'critical' ? 'pulse-dot-crimson' : 'pulse-dot-emerald'} />
-                <strong style={{ fontSize: '14px', color: '#0F172A' }}>{selectedNode.label}</strong>
-              </div>
-              <button
-                onClick={() => setSelectedNodeId(null)}
-                style={{ background: 'transparent', border: 'none', color: '#94A3B8', cursor: 'pointer' }}
-              >
-                <X size={16} />
-              </button>
-            </div>
-
-            <div style={{ fontSize: '12px', color: '#64748B', marginBottom: '14px' }}>
-              <div>Tier: <strong style={{ color: '#0F172A', fontWeight: 500 }}>{tiers.find(t => t.tier === selectedNode.tier)?.name}</strong></div>
-              <div style={{ marginTop: '2px' }}>Role: <strong style={{ color: '#0F172A', fontWeight: 500 }}>{selectedNode.role}</strong></div>
-              <div style={{ marginTop: '2px' }}>IP: <strong style={{ color: '#0F172A', fontWeight: 500 }}>{selectedNode.ip}</strong></div>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '14px' }}>
-              <div className="card-white" style={{ padding: '8px 10px', background: '#F8FAFC' }}>
-                <div style={{ fontSize: '10px', color: '#94A3B8', fontWeight: 600 }}>CPU LOAD</div>
-                <div style={{ fontSize: '15px', fontWeight: 600, color: selectedNode.cpuPercent > 85 ? '#E11D48' : '#0F172A' }}>
-                  {selectedNode.cpuPercent}%
-                </div>
-              </div>
-              <div className="card-white" style={{ padding: '8px 10px', background: '#F8FAFC' }}>
-                <div style={{ fontSize: '10px', color: '#94A3B8', fontWeight: 600 }}>P99 LATENCY</div>
-                <div style={{ fontSize: '15px', fontWeight: 600, color: selectedNode.p99LatencyMs > 100 ? '#E11D48' : '#0F172A' }}>
-                  {selectedNode.p99LatencyMs} ms
-                </div>
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {selectedNode.status === 'critical' ? (
-                <button
-                  className="btn-crimson-primary"
-                  onClick={onNavigateToIncidents}
-                  style={{ width: '100%', fontSize: '12px', padding: '8px' }}
-                >
-                  <AlertTriangle size={13} />
-                  <span>Open War Room (#INC-9402)</span>
-                </button>
-              ) : (
-                <div style={{ fontSize: '11.5px', color: '#059669', display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 0' }}>
-                  <CheckCircle2 size={13} />
-                  <span>Operational &amp; Nominal</span>
-                </div>
-              )}
-
-              {onSelectHost && (
-                <button
-                  className="btn-slate-secondary"
-                  onClick={() => onSelectHost(selectedNode.label)}
-                  style={{ width: '100%', fontSize: '11.5px', padding: '7px' }}
-                >
-                  Inspect in Host Inventory
-                </button>
-              )}
-            </div>
           </div>
         )}
       </div>
+
+      {/* Add Host Modal */}
+      <AddHostModal
+        isOpen={isAddHostModalOpen}
+        onClose={() => setIsAddHostModalOpen(false)}
+      />
     </div>
   );
 };

@@ -81,14 +81,48 @@ GROUP BY minute, cluster, role;
 
 
 --------------------------------------------------------------------------------
--- 2. POSTGRESQL DDL (Host Inventory, Alert Rules & Incident Management)
+-- 2. POSTGRESQL DDL (Tenant Organizations, Users, Hosts, & Alert Rules)
 --------------------------------------------------------------------------------
 
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- Host Inventory Table
+-- Tenant Organizations Table
+CREATE TABLE IF NOT EXISTS organizations (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name VARCHAR(255) NOT NULL,
+    api_key_hash VARCHAR(255) NOT NULL UNIQUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Users Table
+CREATE TABLE IF NOT EXISTS users (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    org_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    email VARCHAR(255) NOT NULL UNIQUE,
+    password_hash VARCHAR(255) NOT NULL,
+    full_name VARCHAR(255) NOT NULL,
+    role VARCHAR(20) NOT NULL DEFAULT 'admin' CHECK (role IN ('admin', 'sre', 'viewer')),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_users_org_id ON users(org_id);
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+
+-- Active User Sessions Table (JWT / Cookie Session Mapping)
+CREATE TABLE IF NOT EXISTS sessions (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token VARCHAR(255) NOT NULL UNIQUE,
+    expires_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token);
+
+-- Host Inventory Table (Multi-tenant)
 CREATE TABLE IF NOT EXISTS hosts (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    org_id UUID REFERENCES organizations(id) ON DELETE CASCADE,
     hostname VARCHAR(255) NOT NULL UNIQUE,
     cluster VARCHAR(100) NOT NULL,
     role VARCHAR(100) NOT NULL,
@@ -98,6 +132,7 @@ CREATE TABLE IF NOT EXISTS hosts (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE INDEX IF NOT EXISTS idx_hosts_org_id ON hosts(org_id);
 CREATE INDEX IF NOT EXISTS idx_hosts_cluster_role ON hosts(cluster, role);
 CREATE INDEX IF NOT EXISTS idx_hosts_status ON hosts(status);
 
