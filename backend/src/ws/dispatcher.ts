@@ -10,14 +10,53 @@ interface ClientMetadata {
 }
 
 export class WebSocketDispatcher {
+  private static instance: WebSocketDispatcher | null = null;
   private clients: Map<string, ClientMetadata> = new Map();
   private broadcastTimer: NodeJS.Timeout | null = null;
   private heartbeatTimer: NodeJS.Timeout | null = null;
   private registry = NodeRegistry.getInstance();
 
   constructor() {
+    WebSocketDispatcher.instance = this;
     this.startHeartbeatLoop();
     this.startBroadcastLoop();
+  }
+
+  public static getInstance(): WebSocketDispatcher {
+    if (!WebSocketDispatcher.instance) {
+      WebSocketDispatcher.instance = new WebSocketDispatcher();
+    }
+    return WebSocketDispatcher.instance;
+  }
+
+  /**
+   * Broadcast real-time step log event from runbook execution
+   */
+  public broadcastRunbookLog(logEvent: any): void {
+    const payload = JSON.stringify({
+      type: 'RUNBOOK_STEP_LOG',
+      data: logEvent,
+    });
+    for (const [, client] of this.clients.entries()) {
+      if (client.socket.readyState === 1) {
+        client.socket.send(payload);
+      }
+    }
+  }
+
+  /**
+   * Broadcast runbook execution status update (started, success, failed, aborted)
+   */
+  public broadcastRunbookUpdate(execution: any): void {
+    const payload = JSON.stringify({
+      type: 'RUNBOOK_EXECUTION_UPDATE',
+      data: execution,
+    });
+    for (const [, client] of this.clients.entries()) {
+      if (client.socket.readyState === 1) {
+        client.socket.send(payload);
+      }
+    }
   }
 
   /**

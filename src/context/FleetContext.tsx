@@ -203,6 +203,10 @@ export const FleetProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               });
               // Keep zero state unless user triggered local simulation
             }
+          } else if (payload.type === 'RUNBOOK_STEP_LOG') {
+            window.dispatchEvent(new CustomEvent('ricoz:runbook_log', { detail: payload.data }));
+          } else if (payload.type === 'RUNBOOK_EXECUTION_UPDATE') {
+            window.dispatchEvent(new CustomEvent('ricoz:runbook_update', { detail: payload.data }));
           }
         } catch (parseErr) {
           console.warn('[RicozInfra WS] Failed to parse message frame:', parseErr);

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Play, 
   Plus, 
@@ -7,7 +7,10 @@ import {
   Zap, 
   X, 
   ChevronRight,
-  ArrowRight
+  ArrowRight,
+  RotateCcw,
+  ShieldAlert,
+  Activity
 } from 'lucide-react';
 
 interface RunbooksViewProps {
@@ -32,14 +35,16 @@ interface AuditLogEntry {
   ruleName: string;
   target: string;
   duration: string;
-  status: 'Success' | 'Failed';
+  status: 'Success' | 'Failed' | 'Running' | 'Aborted';
   rawLogs: string[];
 }
 
-export const RunbooksView: React.FC<RunbooksViewProps> = ({ onOpenRunbookModal }) => {
+const BACKEND_BASE = 'http://localhost:8080';
+
+export const RunbooksView: React.FC<RunbooksViewProps> = () => {
   const [rules, setRules] = useState<AutomationRule[]>([
     {
-      id: 'rule-1',
+      id: 'e11a0001-0000-4000-8000-000000000001',
       title: 'Automatic Ingress Drain & Cordon on Packet Loss',
       triggerLogic: 'WHEN Interface Packet Loss > 3% FOR 60s ON Role: Edge-Gateway',
       executionSequence: '1. Cordon Node → 2. Drain active traffic to Warm Standby → 3. Post telemetry snapshot to #infra-alerts',
@@ -49,8 +54,8 @@ export const RunbooksView: React.FC<RunbooksViewProps> = ({ onOpenRunbookModal }
       outcome: 'Success',
     },
     {
-      id: 'rule-2',
-      title: 'Memory Leak Flush & Graceful Pod Worker Rotation',
+      id: 'e11a0002-0000-4000-8000-000000000002',
+      title: 'Memory Pressure Heap Dump & Graceful Pod Rotation',
       triggerLogic: 'WHEN Memory Pressure > 92% FOR 5m ON K8s Cluster Alpha',
       executionSequence: '1. Trigger Heap Dump → 2. Spin up replica → 3. Graceful SIGTERM old worker',
       enabled: true,
@@ -58,10 +63,10 @@ export const RunbooksView: React.FC<RunbooksViewProps> = ({ onOpenRunbookModal }
       outcome: 'Success',
     },
     {
-      id: 'rule-3',
-      title: 'BGP Route Flap Dampening & Anycast Withdrawal',
-      triggerLogic: 'WHEN BGP Flap Count > 4 in 120s ON Cloudflare Transit AS13335',
-      executionSequence: '1. Deprecate MED Metric → 2. Withdraw Secondary Anycast Prefix → 3. Failover to Transit Direct',
+      id: 'e11a0003-0000-4000-8000-000000000003',
+      title: 'CPU Exhaustion Cordon & Graceful Container Eviction',
+      triggerLogic: 'WHEN CPU Utilization > 90% FOR 2m ON Kubernetes-Worker',
+      executionSequence: '1. Safely Cordon Node → 2. Evict Pods with 30s Grace Period → 3. Notify Cluster SRE',
       enabled: true,
       lastTriggered: '18 days ago',
       outcome: 'Success',
@@ -77,18 +82,18 @@ export const RunbooksView: React.FC<RunbooksViewProps> = ({ onOpenRunbookModal }
     },
   ]);
 
-  const [auditLogs] = useState<AuditLogEntry[]>([
+  const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([
     {
       id: 'log-1',
       timestamp: 'Today, 14:18:30 UTC',
       incidentId: 'INC-9402',
       ruleName: 'Automatic Ingress Drain & Cordon on Packet Loss',
-      target: 'prod-edge-gw-01 (10.240.12.84)',
+      target: 'prod-edge-gw-01',
       duration: '18.2s',
       status: 'Success',
       rawLogs: [
         '[14:18:30.102] Trigger fired: Packet loss exceeded 3% threshold on eth0',
-        '[14:18:30.450] Pre-flight gate: Verified warm standby prod-edge-gw-03 is nominal (0.2ms latency)',
+        '[14:18:30.450] Pre-flight gate: Verified warm standby prod-edge-gw-02 is nominal (0.2ms latency)',
         '[14:18:31.200] Cordon node: Marked prod-edge-gw-01 unschedulable in service mesh topology',
         '[14:18:32.840] Socket drain: SIGUSR1 issued to Envoy reverse proxy PID 1402',
         '[14:18:44.110] Active sockets dropped: 14,892 -> 0',
@@ -101,63 +106,186 @@ export const RunbooksView: React.FC<RunbooksViewProps> = ({ onOpenRunbookModal }
       id: 'log-2',
       timestamp: 'Sep 29, 04:12:15 UTC',
       incidentId: 'INC-9388',
-      ruleName: 'Memory Leak Flush & Graceful Pod Worker Rotation',
-      target: 'pod-billing-worker-08b (k8s-node-compute-04a)',
+      ruleName: 'Memory Pressure Heap Dump & Graceful Pod Rotation',
+      target: 'k8s-node-compute-04a',
       duration: '14.6s',
       status: 'Success',
       rawLogs: [
         '[04:12:15.010] Trigger fired: Memory pressure reached 93.4% on worker thread',
-        '[04:12:16.200] Heap profile dump written to /var/log/profiles/billing-9388.dump',
+        '[04:12:16.200] Heap profile dump written to /var/log/profiles/inc-9388-memory.dump',
         '[04:12:18.450] Replica pod-billing-worker-08c successfully scheduled and passed healthz probe',
         '[04:12:28.120] Old worker terminated with SIGTERM (exit code 0)',
         '[04:12:29.610] EXECUTION RESULT: SUCCESS (MTTR: 14.6s)',
-      ],
-    },
-    {
-      id: 'log-3',
-      timestamp: 'Sep 22, 19:40:02 UTC',
-      incidentId: 'INC-9340',
-      ruleName: 'BGP Route Flap Dampening & Anycast Withdrawal',
-      target: 'bgp-edge-transit-01 (AS13335)',
-      duration: '22.1s',
-      status: 'Success',
-      rawLogs: [
-        '[19:40:02.040] Trigger fired: 5 route flap events detected within 90 seconds',
-        '[19:40:03.110] Increased BGP MED metric from 100 to 500 on primary leaf',
-        '[19:40:12.800] Transit provider confirmed withdrawal of unstable route announcement',
-        '[19:40:24.140] EXECUTION RESULT: SUCCESS (MTTR: 22.1s, route stabilized)',
-      ],
-    },
-    {
-      id: 'log-4',
-      timestamp: 'Sep 15, 08:05:44 UTC',
-      incidentId: 'INC-9291',
-      ruleName: 'ClickHouse Queue Buffer Overflow Auto-Scale',
-      target: 'clickhouse-ingest-cluster',
-      duration: '45.0s',
-      status: 'Success',
-      rawLogs: [
-        '[08:05:44.020] Trigger fired: Ingest buffer depth 88% on Telemetry Mesh',
-        '[08:05:52.400] Auto-scaled ingestion statefulset replicas from 4 to 6',
-        '[08:06:29.020] Buffer depth cleared to 24%',
-        '[08:06:29.020] EXECUTION RESULT: SUCCESS (MTTR: 45.0s)',
       ],
     },
   ]);
 
   // Modal states
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [isSimulateModalOpen, setIsSimulateModalOpen] = useState(false);
   const [selectedAuditLog, setSelectedAuditLog] = useState<AuditLogEntry | null>(null);
+  const [isExecutingSimulation, setIsExecutingSimulation] = useState(false);
+
+  // Simulation scenario selection
+  const [simulateScenario, setSimulateScenario] = useState<'packet_loss' | 'memory_pressure' | 'blast_radius_overflow'>('packet_loss');
+  const [simulateHost, setSimulateHost] = useState('prod-edge-gw-01');
 
   // Form states for new rule
   const [newTitle, setNewTitle] = useState('');
   const [newTrigger, setNewTrigger] = useState('WHEN CPU Load > 90% FOR 2m ON Any Node');
   const [newSequence, setNewSequence] = useState('1. Cordon Node → 2. Drain active connections → 3. Alert #ops');
 
-  const handleToggleRule = (id: string) => {
+  const logTerminalRef = useRef<HTMLDivElement>(null);
+
+  // 1. Fetch live rules and executions from backend on mount
+  useEffect(() => {
+    fetch(`${BACKEND_BASE}/api/v1/runbooks/rules`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data && Array.isArray(data.rules) && data.rules.length > 0) {
+          const mapped: AutomationRule[] = data.rules.map((r: any) => ({
+            id: r.id,
+            title: r.name,
+            triggerLogic: `WHEN ${r.trigger_conditions?.metric || 'Metric'} ${r.trigger_conditions?.condition || '>'} ${r.trigger_conditions?.threshold || ''} ON Role: ${r.trigger_conditions?.role || 'Any'}`,
+            executionSequence: Array.isArray(r.action_chain)
+              ? r.action_chain.map((s: any, idx: number) => `${idx + 1}. ${s.name}`).join(' → ')
+              : '1. Automated Action Chain',
+            enabled: r.is_active,
+            lastTriggered: 'Active policy',
+            outcome: 'Success',
+          }));
+          setRules(mapped);
+        }
+      })
+      .catch(() => {});
+
+    fetch(`${BACKEND_BASE}/api/v1/runbooks/executions`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data && Array.isArray(data.executions) && data.executions.length > 0) {
+          const mappedLogs: AuditLogEntry[] = data.executions.map((e: any) => ({
+            id: e.id,
+            timestamp: new Date(e.started_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+            incidentId: e.incident_id,
+            ruleName: e.rule_name || 'Self-Healing Remediation',
+            target: e.target_host,
+            duration: `${(e.duration_ms / 1000).toFixed(1)}s`,
+            status: e.status === 'success' ? 'Success' : e.status === 'aborted' ? 'Aborted' : e.status === 'running' ? 'Running' : 'Failed',
+            rawLogs: Array.isArray(e.raw_logs) && e.raw_logs.length > 0 ? e.raw_logs : (e.execution_logs ? e.execution_logs.split('\n') : []),
+          }));
+          setAuditLogs(mappedLogs);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  // 2. Real-Time WebSocket Event Listeners
+  useEffect(() => {
+    const handleRunbookLog = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      const logEvent = customEvent.detail;
+      if (!logEvent) return;
+
+      setSelectedAuditLog((prev) => {
+        if (!prev) return prev;
+        if (prev.incidentId === logEvent.incident_id || prev.id === logEvent.execution_id) {
+          const updatedLogs = [...prev.rawLogs, logEvent.line];
+          return {
+            ...prev,
+            rawLogs: updatedLogs,
+          };
+        }
+        return prev;
+      });
+
+      setAuditLogs((prev) =>
+        prev.map((entry) => {
+          if (entry.incidentId === logEvent.incident_id || entry.id === logEvent.execution_id) {
+            return {
+              ...entry,
+              rawLogs: [...entry.rawLogs, logEvent.line],
+            };
+          }
+          return entry;
+        })
+      );
+
+      // Auto-scroll log terminal
+      setTimeout(() => {
+        if (logTerminalRef.current) {
+          logTerminalRef.current.scrollTop = logTerminalRef.current.scrollHeight;
+        }
+      }, 50);
+    };
+
+    const handleRunbookUpdate = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      const update = customEvent.detail;
+      if (!update) return;
+
+      const formattedEntry: AuditLogEntry = {
+        id: update.id,
+        timestamp: new Date(update.started_at || Date.now()).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+        incidentId: update.incident_id,
+        ruleName: update.rule_name || 'Self-Healing Remediation',
+        target: update.target_host,
+        duration: update.duration_ms ? `${(update.duration_ms / 1000).toFixed(1)}s` : 'running...',
+        status: update.status === 'success' ? 'Success' : update.status === 'aborted' ? 'Aborted' : update.status === 'running' ? 'Running' : 'Failed',
+        rawLogs: update.raw_logs || (update.execution_logs ? update.execution_logs.split('\n') : []),
+      };
+
+      setAuditLogs((prev) => {
+        const idx = prev.findIndex((x) => x.id === update.id || x.incidentId === update.incident_id);
+        if (idx !== -1) {
+          const next = [...prev];
+          next[idx] = {
+            ...next[idx],
+            ...formattedEntry,
+            rawLogs: formattedEntry.rawLogs.length >= next[idx].rawLogs.length ? formattedEntry.rawLogs : next[idx].rawLogs,
+          };
+          return next;
+        }
+        return [formattedEntry, ...prev];
+      });
+
+      setSelectedAuditLog((prev) => {
+        if (prev && (prev.id === update.id || prev.incidentId === update.incident_id)) {
+          return {
+            ...prev,
+            status: formattedEntry.status,
+            duration: formattedEntry.duration,
+            rawLogs: formattedEntry.rawLogs.length >= prev.rawLogs.length ? formattedEntry.rawLogs : prev.rawLogs,
+          };
+        }
+        return prev;
+      });
+    };
+
+    window.addEventListener('ricoz:runbook_log', handleRunbookLog);
+    window.addEventListener('ricoz:runbook_update', handleRunbookUpdate);
+
+    return () => {
+      window.removeEventListener('ricoz:runbook_log', handleRunbookLog);
+      window.removeEventListener('ricoz:runbook_update', handleRunbookUpdate);
+    };
+  }, []);
+
+  const handleToggleRule = async (id: string) => {
+    const rule = rules.find((r) => r.id === id);
+    if (!rule) return;
+
+    const nextState = !rule.enabled;
     setRules((prev) =>
-      prev.map((r) => (r.id === id ? { ...r, enabled: !r.enabled } : r))
+      prev.map((r) => (r.id === id ? { ...r, enabled: nextState } : r))
     );
+
+    try {
+      await fetch(`${BACKEND_BASE}/api/v1/runbooks/rules/${id}/toggle`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ active: nextState }),
+      });
+    } catch {}
   };
 
   const handleCreateRule = (e: React.FormEvent) => {
@@ -179,6 +307,52 @@ export const RunbooksView: React.FC<RunbooksViewProps> = ({ onOpenRunbookModal }
     setNewTitle('');
   };
 
+  /**
+   * Launch Automated Self-Healing Simulation
+   */
+  const handleLaunchSimulation = async () => {
+    setIsExecutingSimulation(true);
+
+    try {
+      const res = await fetch(`${BACKEND_BASE}/api/v1/runbooks/simulate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          incident_type: simulateScenario,
+          host: simulateHost,
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const placeholderEntry: AuditLogEntry = {
+          id: `sim-${Date.now()}`,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+          incidentId: data.incident_id,
+          ruleName: simulateScenario === 'memory_pressure'
+            ? 'Memory Pressure Heap Dump & Graceful Pod Rotation'
+            : 'Automatic Ingress Drain & Cordon on Packet Loss',
+          target: data.target_host,
+          duration: 'executing...',
+          status: 'Running',
+          rawLogs: [
+            `[${new Date().toISOString().substring(11, 23)}] Trigger synthesized: #${data.incident_id} (${data.title})`,
+            `[${new Date().toISOString().substring(11, 23)}] Dispatching event to Redis stream 'stream:incidents:created'...`,
+            `[${new Date().toISOString().substring(11, 23)}] Connecting to Autonomous Remediation Engine...`,
+          ],
+        };
+
+        setAuditLogs((prev) => [placeholderEntry, ...prev]);
+        setSelectedAuditLog(placeholderEntry);
+        setIsSimulateModalOpen(false);
+      }
+    } catch {
+      setIsSimulateModalOpen(false);
+    } finally {
+      setIsExecutingSimulation(false);
+    }
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
       {/* 1. Header with Crimson Button "+ Create New Runbook Rule" */}
@@ -193,9 +367,13 @@ export const RunbooksView: React.FC<RunbooksViewProps> = ({ onOpenRunbookModal }
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <button className="btn-slate-secondary" onClick={onOpenRunbookModal} style={{ fontSize: '12.5px' }}>
+          <button
+            className="btn-slate-secondary"
+            onClick={() => setIsSimulateModalOpen(true)}
+            style={{ fontSize: '12.5px', gap: '6px' }}
+          >
             <Play size={13} color="#10B981" />
-            <span>Simulate Runbook</span>
+            <span>Simulate Incident Remediation</span>
           </button>
 
           <button
@@ -324,7 +502,7 @@ export const RunbooksView: React.FC<RunbooksViewProps> = ({ onOpenRunbookModal }
                       {rule.title}
                     </h3>
                     <div style={{ fontSize: '12px', color: '#64748B', marginTop: '2px' }}>
-                      Last Triggered: <strong>{rule.lastTriggered}</strong>
+                      Status: <strong>{rule.enabled ? 'Active Policy' : 'Disabled'}</strong> • Cooldown: 15 mins
                     </div>
                   </div>
                 </div>
@@ -346,7 +524,11 @@ export const RunbooksView: React.FC<RunbooksViewProps> = ({ onOpenRunbookModal }
                   </label>
 
                   <button
-                    onClick={onOpenRunbookModal}
+                    onClick={() => {
+                      setSimulateScenario(rule.id.includes('0002') ? 'memory_pressure' : 'packet_loss');
+                      setSimulateHost(rule.id.includes('0002') ? 'k8s-node-compute-04a' : 'prod-edge-gw-01');
+                      setIsSimulateModalOpen(true);
+                    }}
                     className="btn-slate-secondary"
                     style={{ fontSize: '11.5px', padding: '5px 10px' }}
                   >
@@ -411,14 +593,14 @@ export const RunbooksView: React.FC<RunbooksViewProps> = ({ onOpenRunbookModal }
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '18px', flexWrap: 'wrap', gap: '12px' }}>
           <div>
             <h2 style={{ fontSize: '16px', fontWeight: 600, color: '#0F172A' }}>
-              Execution Audit Log Table
+              Execution Audit Log Table ({auditLogs.length})
             </h2>
             <p style={{ fontSize: '12.5px', color: '#64748B', marginTop: '2px' }}>
-              Complete chronological ledger of automated mitigation executions with full step traces.
+              Complete chronological ledger of automated mitigation executions streamed live from the execution engine.
             </p>
           </div>
 
-          <span className="metric-pill-slate">Immutable Audit Log</span>
+          <span className="metric-pill-slate">PostgreSQL Immutable Audit Log</span>
         </div>
 
         <div className="data-table-container">
@@ -437,6 +619,8 @@ export const RunbooksView: React.FC<RunbooksViewProps> = ({ onOpenRunbookModal }
             <tbody>
               {auditLogs.map((log) => {
                 const isSuccess = log.status === 'Success';
+                const isRunning = log.status === 'Running';
+                const isAborted = log.status === 'Aborted';
 
                 return (
                   <tr key={log.id}>
@@ -479,6 +663,16 @@ export const RunbooksView: React.FC<RunbooksViewProps> = ({ onOpenRunbookModal }
                         <span className="metric-pill-emerald">
                           <CheckCircle2 size={12} color="#10B981" />
                           <span>Success</span>
+                        </span>
+                      ) : isRunning ? (
+                        <span className="metric-pill-slate" style={{ background: '#EFF6FF', color: '#1D4ED8', border: '1px solid #BFDBFE' }}>
+                          <span className="pulse-dot-emerald" style={{ background: '#3B82F6' }} />
+                          <span>Running</span>
+                        </span>
+                      ) : isAborted ? (
+                        <span className="metric-pill-slate" style={{ background: '#FEF3C7', color: '#B45309', border: '1px solid #FDE68A' }}>
+                          <ShieldAlert size={12} color="#B45309" />
+                          <span>Aborted</span>
                         </span>
                       ) : (
                         <span className="metric-pill-crimson">
@@ -623,7 +817,7 @@ export const RunbooksView: React.FC<RunbooksViewProps> = ({ onOpenRunbookModal }
                 fontSize: '12px',
                 color: '#64748B',
               }}>
-                All newly created runbook rules are validated for idempotency and undergo safe canary test checks prior to activation.
+                All newly created runbook rules are validated for idempotency, cooldown protection (15m window), and blast radius limits before execution.
               </div>
 
               <div style={{ display: 'flex', gap: '10px', marginTop: '6px' }}>
@@ -649,14 +843,175 @@ export const RunbooksView: React.FC<RunbooksViewProps> = ({ onOpenRunbookModal }
         </div>
       )}
 
-      {/* Modal 2: Raw Execution Log Modal */}
+      {/* Modal 2: Simulate Incident Remediation Modal */}
+      {isSimulateModalOpen && (
+        <div className="modal-overlay" onClick={() => setIsSimulateModalOpen(false)}>
+          <div
+            className="modal-content-card"
+            style={{
+              width: '560px',
+              maxWidth: '92vw',
+              background: '#FFFFFF',
+              border: '1px solid #E2E8F0',
+              borderRadius: '16px',
+              padding: '28px',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.12)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Activity size={18} color="#E11D48" />
+                <h3 style={{ fontSize: '17px', fontWeight: 600, color: '#0F172A' }}>
+                  Simulate Incident &amp; Test Autonomous Remediation
+                </h3>
+              </div>
+
+              <button
+                onClick={() => setIsSimulateModalOpen(false)}
+                style={{ background: 'transparent', border: 'none', color: '#94A3B8', cursor: 'pointer' }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <p style={{ fontSize: '13px', color: '#64748B', marginBottom: '18px' }}>
+              Select a real-world incident scenario to trigger the execution engine. Steps will be dispatched over Redis Streams and streamed live via WebSockets.
+            </p>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '20px' }}>
+              {/* Option 1: Ingress Packet Loss */}
+              <label
+                style={{
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: '12px',
+                  padding: '14px',
+                  borderRadius: '10px',
+                  border: simulateScenario === 'packet_loss' ? '2px solid #E11D48' : '1px solid #E2E8F0',
+                  background: simulateScenario === 'packet_loss' ? '#FFF1F2' : '#FFFFFF',
+                  cursor: 'pointer',
+                }}
+              >
+                <input
+                  type="radio"
+                  name="scenario"
+                  checked={simulateScenario === 'packet_loss'}
+                  onChange={() => {
+                    setSimulateScenario('packet_loss');
+                    setSimulateHost('prod-edge-gw-01');
+                  }}
+                  style={{ marginTop: '2px', accentColor: '#E11D48' }}
+                />
+                <div>
+                  <div style={{ fontSize: '13.5px', fontWeight: 600, color: '#0F172A' }}>
+                    Ingress Packet Loss Drop (Edge-Gateway)
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#64748B', marginTop: '3px' }}>
+                    Remediation: Cordon host → Swing traffic weight 100% to standby → Issue SIGUSR1 graceful TCP drain.
+                  </div>
+                </div>
+              </label>
+
+              {/* Option 2: Memory Saturation */}
+              <label
+                style={{
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: '12px',
+                  padding: '14px',
+                  borderRadius: '10px',
+                  border: simulateScenario === 'memory_pressure' ? '2px solid #E11D48' : '1px solid #E2E8F0',
+                  background: simulateScenario === 'memory_pressure' ? '#FFF1F2' : '#FFFFFF',
+                  cursor: 'pointer',
+                }}
+              >
+                <input
+                  type="radio"
+                  name="scenario"
+                  checked={simulateScenario === 'memory_pressure'}
+                  onChange={() => {
+                    setSimulateScenario('memory_pressure');
+                    setSimulateHost('k8s-node-compute-04a');
+                  }}
+                  style={{ marginTop: '2px', accentColor: '#E11D48' }}
+                />
+                <div>
+                  <div style={{ fontSize: '13.5px', fontWeight: 600, color: '#0F172A' }}>
+                    Worker Thread Memory Pressure Saturation (&gt;92%)
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#64748B', marginTop: '3px' }}>
+                    Remediation: Capture heap dump profile to S3 → Scale replica deployment → Graceful restart via SSH.
+                  </div>
+                </div>
+              </label>
+
+              {/* Option 3: Blast Radius Guard Test */}
+              <label
+                style={{
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: '12px',
+                  padding: '14px',
+                  borderRadius: '10px',
+                  border: simulateScenario === 'blast_radius_overflow' ? '2px solid #E11D48' : '1px solid #E2E8F0',
+                  background: simulateScenario === 'blast_radius_overflow' ? '#FFF1F2' : '#FFFFFF',
+                  cursor: 'pointer',
+                }}
+              >
+                <input
+                  type="radio"
+                  name="scenario"
+                  checked={simulateScenario === 'blast_radius_overflow'}
+                  onChange={() => {
+                    setSimulateScenario('blast_radius_overflow');
+                    setSimulateHost('prod-edge-gw-01');
+                  }}
+                  style={{ marginTop: '2px', accentColor: '#E11D48' }}
+                />
+                <div>
+                  <div style={{ fontSize: '13.5px', fontWeight: 600, color: '#0F172A' }}>
+                    Blast Radius Guard Test (&gt;25% Cluster Failure)
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#64748B', marginTop: '3px' }}>
+                    Safety Rail: Simulates 3/4 node correlated failure. Safety gate automatically aborts execution and pages on-call SRE.
+                  </div>
+                </div>
+              </label>
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button
+                type="button"
+                className="btn-slate-secondary"
+                onClick={() => setIsSimulateModalOpen(false)}
+                style={{ flex: 1 }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn-crimson-primary"
+                onClick={handleLaunchSimulation}
+                disabled={isExecutingSimulation}
+                style={{ flex: 1, gap: '6px' }}
+              >
+                <Play size={14} />
+                <span>{isExecutingSimulation ? 'Dispatching...' : 'Launch Autonomous Remediation'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal 3: Raw Execution Log Modal (Live Streamed Terminal) */}
       {selectedAuditLog && (
         <div className="modal-overlay" onClick={() => setSelectedAuditLog(null)}>
           <div
             className="modal-content-card"
             style={{
-              width: '680px',
-              maxWidth: '92vw',
+              width: '740px',
+              maxWidth: '94vw',
               background: '#FFFFFF',
               border: '1px solid #E2E8F0',
               borderRadius: '16px',
@@ -666,13 +1021,46 @@ export const RunbooksView: React.FC<RunbooksViewProps> = ({ onOpenRunbookModal }
             onClick={(e) => e.stopPropagation()}
           >
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
-              <div>
-                <h3 style={{ fontSize: '16px', fontWeight: 600, color: '#0F172A' }}>
-                  Raw Execution Log: #{selectedAuditLog.incidentId}
-                </h3>
-                <p style={{ fontSize: '12px', color: '#64748B', marginTop: '2px' }}>
-                  {selectedAuditLog.ruleName} • Duration: {selectedAuditLog.duration}
-                </p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{
+                  width: '32px',
+                  height: '32px',
+                  borderRadius: '8px',
+                  background: selectedAuditLog.status === 'Success' ? '#ECFDF5' : selectedAuditLog.status === 'Running' ? '#EFF6FF' : '#FFF1F2',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}>
+                  {selectedAuditLog.status === 'Success' ? (
+                    <CheckCircle2 size={16} color="#10B981" />
+                  ) : selectedAuditLog.status === 'Running' ? (
+                    <RotateCcw size={16} color="#2563EB" className="animate-spin" />
+                  ) : (
+                    <AlertTriangle size={16} color="#E11D48" />
+                  )}
+                </div>
+
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <h3 style={{ fontSize: '16px', fontWeight: 600, color: '#0F172A' }}>
+                      Remediation Audit Trace: #{selectedAuditLog.incidentId}
+                    </h3>
+                    <span className={
+                      selectedAuditLog.status === 'Success'
+                        ? 'metric-pill-emerald'
+                        : selectedAuditLog.status === 'Running'
+                        ? 'metric-pill-slate'
+                        : 'metric-pill-crimson'
+                    }>
+                      {selectedAuditLog.status === 'Running' && <span className="pulse-dot-emerald" style={{ background: '#3B82F6' }} />}
+                      <span>{selectedAuditLog.status}</span>
+                    </span>
+                  </div>
+
+                  <p style={{ fontSize: '12px', color: '#64748B', marginTop: '2px' }}>
+                    {selectedAuditLog.ruleName} • Target: {selectedAuditLog.target} • Duration: {selectedAuditLog.duration}
+                  </p>
+                </div>
               </div>
 
               <button
@@ -684,25 +1072,63 @@ export const RunbooksView: React.FC<RunbooksViewProps> = ({ onOpenRunbookModal }
             </div>
 
             {/* Terminal-like Light Surface with Strict Inter Font */}
-            <div style={{
-              background: '#F8FAFC',
-              border: '1px solid #E2E8F0',
-              borderRadius: '10px',
-              padding: '16px',
-              fontSize: '12px',
-              lineHeight: 1.65,
-              color: '#334155',
-              maxHeight: '340px',
-              overflowY: 'auto',
-            }}>
-              {selectedAuditLog.rawLogs.map((line, i) => (
-                <div key={i} style={{ color: line.includes('SUCCESS') ? '#059669' : line.includes('Trigger fired') ? '#E11D48' : '#334155' }}>
-                  {line}
+            <div
+              ref={logTerminalRef}
+              style={{
+                background: '#F8FAFC',
+                border: '1px solid #E2E8F0',
+                borderRadius: '10px',
+                padding: '16px',
+                fontSize: '12px',
+                lineHeight: 1.65,
+                color: '#334155',
+                maxHeight: '380px',
+                overflowY: 'auto',
+                fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, sans-serif',
+              }}
+            >
+              {selectedAuditLog.rawLogs && selectedAuditLog.rawLogs.length > 0 ? (
+                selectedAuditLog.rawLogs.map((line, i) => {
+                  let color = '#334155';
+                  let fontWeight = 400;
+
+                  if (line.includes('SUCCESS')) {
+                    color = '#059669';
+                    fontWeight = 600;
+                  } else if (line.includes('FAILED') || line.includes('ABORT') || line.includes('Trigger fired') || line.includes('SAFETY GATE ABORT')) {
+                    color = '#E11D48';
+                    fontWeight = 600;
+                  } else if (line.includes('[K8s API]') || line.includes('[LB Ingress]')) {
+                    color = '#0284C7';
+                  } else if (line.includes('[SSH Transport]') || line.includes('[SSH Exec]')) {
+                    color = '#4F46E5';
+                  } else if (line.includes('warn') || line.includes('Pre-flight gate')) {
+                    color = '#D97706';
+                  }
+
+                  return (
+                    <div key={i} style={{ color, fontWeight, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                      {line}
+                    </div>
+                  );
+                })
+              ) : (
+                <div style={{ color: '#94A3B8' }}>No logs recorded yet. Listening for streaming output...</div>
+              )}
+
+              {selectedAuditLog.status === 'Running' && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#2563EB', marginTop: '6px', fontSize: '11px' }}>
+                  <span className="pulse-dot-emerald" style={{ background: '#3B82F6' }} />
+                  <span>Remediation worker active — streaming stdout/stderr frames live...</span>
                 </div>
-              ))}
+              )}
             </div>
 
-            <div style={{ marginTop: '18px', display: 'flex', justifyContent: 'flex-end' }}>
+            <div style={{ marginTop: '18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ fontSize: '11.5px', color: '#64748B' }}>
+                Automated audit records are immutably signed and stored in PostgreSQL.
+              </span>
+
               <button
                 className="btn-slate-secondary"
                 onClick={() => setSelectedAuditLog(null)}

@@ -11,6 +11,10 @@ import { pingPostgres } from './db/postgres.js';
 import { WebSocketDispatcher } from './ws/dispatcher.js';
 import { TelemetryWorker } from './workers/telemetryWorker.js';
 import { NodeRegistry } from './registry/nodeRegistry.js';
+import { RunbooksRepository } from './db/runbooksRepository.js';
+import { RunbookWorker } from './runbooks/runbookWorker.js';
+import { RunbookEngine } from './runbooks/runbookEngine.js';
+import type { IncidentEvent } from './runbooks/types.js';
 
 export async function buildServer() {
   const app = Fastify({
@@ -135,6 +139,120 @@ export async function buildServer() {
     return reply.status(isSystemNominal ? 200 : 503).send(healthStatus);
   });
 
+  // ---------------------------------------------------------------------------
+  // RUNBOOK & SELF-HEALING ENGINE ROUTES
+  // ---------------------------------------------------------------------------
+
+  /**
+   * List all runbook automation rules
+   * GET /api/v1/runbooks/rules
+   */
+  app.get('/api/v1/runbooks/rules', async () => {
+    const rules = await RunbooksRepository.getAllRules();
+    return { rules };
+  });
+
+  /**
+   * Toggle rule active state
+   * POST /api/v1/runbooks/rules/:id/toggle
+   */
+  app.post('/api/v1/runbooks/rules/:id/toggle', async (request) => {
+    const { id } = request.params as { id: string };
+    const { active } = request.body as { active: boolean };
+    await RunbooksRepository.setRuleActive(id, active);
+    return { success: true, id, active };
+  });
+
+  /**
+   * List recent runbook executions
+   * GET /api/v1/runbooks/executions
+   */
+  app.get('/api/v1/runbooks/executions', async () => {
+    const executions = await RunbooksRepository.getRecentExecutions(50);
+    return { executions };
+  });
+
+  /**
+   * Get single execution details with full logs
+   * GET /api/v1/runbooks/executions/:id
+   */
+  app.get('/api/v1/runbooks/executions/:id', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const execution = await RunbooksRepository.getExecutionById(id);
+    if (!execution) {
+      return reply.status(404).send({ error: 'Execution record not found' });
+    }
+    return { execution };
+  });
+
+  /**
+   * Trigger Simulated Incident & Remediation Workflow
+   * POST /api/v1/runbooks/simulate
+   */
+  app.post('/api/v1/runbooks/simulate', async (request) => {
+    const body = (request.body as any) || {};
+    const incidentType = body.incident_type || 'packet_loss';
+
+    let incident: IncidentEvent;
+
+    if (incidentType === 'memory_pressure') {
+      incident = {
+        id: `INC-${Math.floor(1000 + Math.random() * 9000)}`,
+        title: 'Worker Thread Memory Pressure Saturation (>92%)',
+        severity: 'P2',
+        role: 'Kubernetes-Worker',
+        target_host: body.host || 'k8s-node-compute-04a',
+        cluster: 'us-east-cluster-01',
+        metric: 'memory_pressure_pct',
+        value: 93.4,
+        threshold: 92.0,
+        correlated_nodes_count: 1,
+        total_cluster_nodes: 4,
+        timestamp: new Date().toISOString(),
+      };
+    } else if (incidentType === 'blast_radius_overflow') {
+      incident = {
+        id: `INC-${Math.floor(1000 + Math.random() * 9000)}`,
+        title: 'Cascade Gateway Degradation (Cluster-Wide)',
+        severity: 'P1',
+        role: 'Edge-Gateway',
+        target_host: body.host || 'prod-edge-gw-01',
+        cluster: 'us-east-cluster-01',
+        metric: 'packet_loss_pct',
+        value: 4.8,
+        threshold: 3.0,
+        correlated_nodes_count: 3,
+        total_cluster_nodes: 4,
+        timestamp: new Date().toISOString(),
+      };
+    } else {
+      incident = {
+        id: `INC-${Math.floor(1000 + Math.random() * 9000)}`,
+        title: 'Upstream Ingress Gateway Packet Loss Anomaly',
+        severity: 'P1',
+        role: 'Edge-Gateway',
+        target_host: body.host || 'prod-edge-gw-01',
+        cluster: 'us-east-cluster-01',
+        metric: 'packet_loss_pct',
+        value: 3.8,
+        threshold: 3.0,
+        correlated_nodes_count: 1,
+        total_cluster_nodes: 4,
+        timestamp: new Date().toISOString(),
+      };
+    }
+
+    RunbookWorker.emitIncidentEvent(incident).catch(console.error);
+
+    return {
+      status: 'triggered',
+      incident_id: incident.id,
+      title: incident.title,
+      target_host: incident.target_host,
+      message: 'Autonomous remediation workflow initiated',
+    };
+  });
+
   // Short liveness alias
   app.get('/health', async () => ({ status: 'ok', timestamp: new Date().toISOString() }));
 
@@ -159,6 +277,12 @@ async function start() {
       console.warn(`[Worker] TelemetryWorker start skipped: ${(e as Error).message}`);
     });
 
+    // Start autonomous runbook remediation worker
+    const runbookWorker = new RunbookWorker();
+    runbookWorker.start().catch((e) => {
+      console.warn(`[RunbookWorker] RunbookWorker start skipped: ${(e as Error).message}`);
+    });
+
     // Start HTTP & WS Gateway
     await app.listen({ port: config.port, host: config.host });
     console.log(
@@ -166,12 +290,14 @@ async function start() {
     );
     console.log(`📡 Ingestion Endpoint: POST http://${config.host}:${config.port}/api/v1/telemetry/ingest`);
     console.log(`⚡ WebSocket Stream:   ws://${config.host}:${config.port}/ws/telemetry/live`);
-    console.log(`🩺 Health Status:      http://${config.host}:${config.port}/api/v1/telemetry/health\n`);
+    console.log(`🩺 Health Status:      http://${config.host}:${config.port}/api/v1/telemetry/health`);
+    console.log(`🤖 Runbook API:        http://${config.host}:${config.port}/api/v1/runbooks/executions\n`);
 
     // Graceful shutdown handling
     const shutdown = async (signal: string) => {
       console.log(`\n[Server] Received ${signal}. Shutting down gracefully...`);
       worker.stop();
+      runbookWorker.stop();
       await app.close();
       process.exit(0);
     };
