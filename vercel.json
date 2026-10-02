@@ -12,6 +12,7 @@
     "agent": {
       "root": "agent",
       "runtime": "go",
+      "entrypoint": "main.go",
       "bindings": [
         {
           "type": "service",
