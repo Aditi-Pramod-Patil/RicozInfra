@@ -39,7 +39,9 @@ interface AuditLogEntry {
   rawLogs: string[];
 }
 
-const BACKEND_BASE = 'http://localhost:8080';
+const BACKEND_BASE = import.meta.env.VITE_API_URL !== undefined 
+  ? import.meta.env.VITE_API_URL 
+  : (typeof window !== 'undefined' && window.location.port !== '5173' ? '' : 'http://localhost:8080');
 
 export const RunbooksView: React.FC<RunbooksViewProps> = () => {
   const [rules, setRules] = useState<AutomationRule[]>([

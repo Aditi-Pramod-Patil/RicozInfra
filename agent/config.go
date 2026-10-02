@@ -62,7 +62,10 @@ func LoadConfig(configPath string) (*AgentConfig, error) {
 		cfg.Role = "K8s-Pod"
 	}
 
-	// 5. Environment variable overrides
+	// 5. Environment variable overrides (including Vercel service binding BACKEND_URL)
+	if val := os.Getenv("BACKEND_URL"); val != "" {
+		cfg.GatewayURL = strings.TrimRight(val, "/") + "/api/v1/telemetry/ingest"
+	}
 	if val := os.Getenv("RICOZ_GATEWAY_URL"); val != "" {
 		cfg.GatewayURL = val
 	}

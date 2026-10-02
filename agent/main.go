@@ -2,9 +2,11 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -87,6 +89,32 @@ func main() {
 
 	ticker := time.NewTicker(cfg.SampleInterval)
 	defer ticker.Stop()
+
+	// Optional HTTP endpoint for Vercel service runtime health probing
+	if port := os.Getenv("PORT"); port != "" {
+		go func() {
+			mux := http.NewServeMux()
+			mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(map[string]any{
+					"status":  "healthy",
+					"service": "ricoz-agent",
+					"host_id": cfg.HostID,
+					"spool":   ringBuffer.Len(),
+				})
+			})
+			mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(map[string]any{
+					"service": "ricoz-agent",
+					"version": AgentVersion,
+					"status":  "active",
+				})
+			})
+			log.Printf("🌐 [Agent] Internal service HTTP listener active on port %s", port)
+			_ = http.ListenAndServe(":"+port, mux)
+		}()
+	}
 
 	log.Println("🚀 [Daemon] Telemetry sampling engine active (1000ms loop). Ready.")
 

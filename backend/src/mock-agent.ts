@@ -4,7 +4,8 @@
  * Run via: npm run agent:mock
  */
 
-const INGEST_URL = process.env.INGESTION_GATEWAY_URL || 'http://localhost:8080/api/v1/telemetry/ingest';
+const BACKEND_BASE = process.env.BACKEND_URL ? process.env.BACKEND_URL.replace(/\/$/, '') : '';
+const INGEST_URL = process.env.INGESTION_GATEWAY_URL || (BACKEND_BASE ? `${BACKEND_BASE}/api/v1/telemetry/ingest` : 'http://localhost:8080/api/v1/telemetry/ingest');
 const HOSTNAME = 'prod-edge-gw-01';
 const HOST_ID = 'c73e34b2-2980-4c31-90c7-prod-edge-gw-01';
 const CLUSTER = 'us-east-cluster-01';

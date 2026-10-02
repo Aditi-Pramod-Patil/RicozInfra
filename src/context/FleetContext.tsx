@@ -28,7 +28,18 @@ export interface FleetContextType {
 const FleetContext = createContext<FleetContextType | undefined>(undefined);
 
 const FLEET_STORAGE_KEY = 'ricoz_fleet_state';
-const WS_TELEMETRY_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8080/ws/telemetry/live';
+
+const getWebSocketUrl = () => {
+  if (import.meta.env.VITE_WS_URL) return import.meta.env.VITE_WS_URL;
+  if (typeof window !== 'undefined') {
+    const isLocalDevVite = window.location.port === '5173';
+    if (isLocalDevVite) return 'ws://localhost:8080/ws/telemetry/live';
+    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    return `${proto}//${window.location.host}/ws/telemetry/live`;
+  }
+  return 'ws://localhost:8080/ws/telemetry/live';
+};
+const WS_TELEMETRY_URL = getWebSocketUrl();
 
 export const FleetProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   // STRICT ZERO-DEMO-DATA: Defaults to empty arrays unless live agents connect
@@ -253,10 +264,12 @@ export const FleetProvider: React.FC<{ children: React.ReactNode }> = ({ childre
    * Instantly connects a live edge gateway agent with fluctuating telemetry
    */
   const simulateAgentConnect = () => {
-    isDemoOverrideRef.current = false;
+    const apiBase = import.meta.env.VITE_API_URL !== undefined 
+      ? import.meta.env.VITE_API_URL 
+      : (typeof window !== 'undefined' && window.location.port !== '5173' ? '' : 'http://localhost:8080');
 
     // Send a real ingest packet to the backend if running, or simulate locally
-    fetch('http://localhost:8080/api/v1/telemetry/ingest', {
+    fetch(`${apiBase}/api/v1/telemetry/ingest`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
