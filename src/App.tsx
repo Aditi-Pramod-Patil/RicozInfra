@@ -22,7 +22,7 @@ import { RunbooksView } from './views/RunbooksView';
  * when attempting to access any console view.
  */
 const AppInner: React.FC = () => {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, logout } = useAuth();
   const { activeIncidents } = useFleet();
 
   // Default to the Public Marketing & Acquisition Landing Page
@@ -64,10 +64,10 @@ const AppInner: React.FC = () => {
       setCurrentView('signin');
       return;
     }
-    // If authenticated user tries to visit signin/signup, redirect to overview
+    // If authenticated user explicitly navigates to signin/signup, logout first
+    // so they see a clean, fresh auth form
     if ((view === 'signin' || view === 'signup') && isAuthenticated) {
-      setCurrentView('overview');
-      return;
+      logout();
     }
     setCurrentView(view);
   };
@@ -100,20 +100,11 @@ const AppInner: React.FC = () => {
 
   // Sign In Page (publicly accessible)
   if (currentView === 'signin') {
-    if (isAuthenticated) {
-      // Already authenticated, redirect to overview
-      handleNavigate('overview');
-      return null;
-    }
     return <SignInView onNavigate={handleNavigate} />;
   }
 
   // Sign Up Page (publicly accessible)
   if (currentView === 'signup') {
-    if (isAuthenticated) {
-      handleNavigate('overview');
-      return null;
-    }
     return <SignUpView onNavigate={handleNavigate} />;
   }
 
