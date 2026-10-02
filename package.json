@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "server": "npm --prefix backend run server",
+    "agent:mock": "npm --prefix backend run agent:mock",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview"

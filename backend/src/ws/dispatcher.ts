@@ -1,7 +1,6 @@
 import type { WebSocket } from 'ws';
-import { queryRecentFleetAverages } from '../db/clickhouse.js';
+import { NodeRegistry } from '../registry/nodeRegistry.js';
 import { config } from '../config.js';
-import type { FleetLiveTelemetryBroadcast } from '../types/telemetry.js';
 
 interface ClientMetadata {
   id: string;
@@ -14,6 +13,7 @@ export class WebSocketDispatcher {
   private clients: Map<string, ClientMetadata> = new Map();
   private broadcastTimer: NodeJS.Timeout | null = null;
   private heartbeatTimer: NodeJS.Timeout | null = null;
+  private registry = NodeRegistry.getInstance();
 
   constructor() {
     this.startHeartbeatLoop();
@@ -34,7 +34,7 @@ export class WebSocketDispatcher {
     console.log(`[WS Dispatcher] Client ${id} connected. Total active clients: ${this.clients.size}`);
 
     // Send immediate initial sync snapshot
-    this.sendInitialSnapshot(client);
+    this.sendSnapshot(client);
 
     socket.on('pong', () => {
       const c = this.clients.get(id);
@@ -50,6 +50,10 @@ export class WebSocketDispatcher {
         } else if (msg.type === 'FILTER_CLUSTER') {
           const c = this.clients.get(id);
           if (c) c.clusterFilter = msg.cluster;
+        } else if (msg.type === 'PING') {
+          if (socket.readyState === 1) {
+            socket.send(JSON.stringify({ type: 'PONG', timestamp: new Date().toISOString() }));
+          }
         }
       } catch {
         // Ignore malformed client frames
@@ -68,42 +72,65 @@ export class WebSocketDispatcher {
   }
 
   /**
+   * Prepare live telemetry broadcast payload from NodeRegistry
+   */
+  public generateBroadcastPayload() {
+    const summary = this.registry.getRollupSummary();
+    const activeNodes = this.registry.getActiveNodes();
+    const isAwaitingTelemetry = activeNodes.length === 0;
+
+    return {
+      type: 'FLEET_TELEMETRY_DELTA',
+      timestamp: new Date().toISOString(),
+      isAwaitingTelemetry,
+      summary: {
+        fleet_nodes_active: summary.totalNodes,
+        fleet_nodes_total: summary.totalNodes,
+        global_avg_cpu_pct: summary.avgCpu,
+        aggregate_throughput_gbps: summary.totalThroughputGbps,
+        mean_rtt_ms: summary.meanRttMs,
+        aggregate_packet_loss_pct: summary.aggregatePacketLossPct,
+        active_tcp_connections: summary.activeTcpConnections,
+        active_p1_incidents: summary.activeIncidents.length,
+      },
+      fleetSummary: {
+        totalNodes: summary.totalNodes,
+        avgCpu: summary.avgCpu,
+        totalThroughputGbps: summary.totalThroughputGbps,
+        meanRttMs: summary.meanRttMs,
+        aggregatePacketLossPct: summary.aggregatePacketLossPct,
+        activeTcpConnections: summary.activeTcpConnections,
+        activeIncidents: summary.activeIncidents,
+      },
+      hosts: activeNodes.map((n) => ({
+        id: n.id,
+        hostname: n.hostname,
+        cluster: n.cluster,
+        role: n.role,
+        type: n.type,
+        ip: n.ip,
+        region: n.region,
+        cpuLoad: n.cpuLoad,
+        memoryPct: n.memoryPct,
+        rxGbps: n.rxGbps,
+        txGbps: n.txGbps,
+        uptime: n.uptime,
+        status: n.status,
+        lastSeen: n.lastSeen,
+      })),
+    };
+  }
+
+  /**
    * 1-Second Broadcast loop pushing real-time aggregated metrics to frontends
    */
   private startBroadcastLoop(): void {
-    this.broadcastTimer = setInterval(async () => {
+    this.broadcastTimer = setInterval(() => {
       if (this.clients.size === 0) return;
 
       try {
-        const fleetVitals = await queryRecentFleetAverages(10);
-
-        // Calculate dynamic sub-second jitter simulation for live charts
-        const throughputGbps = 148.6 + (Math.random() * 2 - 1);
-        const avgCpu = Math.min(99, Math.max(10, fleetVitals.avgCpu + (Math.random() * 0.8 - 0.4)));
-
-        const broadcastPayload: FleetLiveTelemetryBroadcast = {
-          type: 'FLEET_TELEMETRY_DELTA',
-          timestamp: new Date().toISOString(),
-          summary: {
-            fleet_nodes_active: fleetVitals.sampledHosts || 1428,
-            fleet_nodes_total: 1432,
-            global_avg_cpu_pct: Number(avgCpu.toFixed(1)),
-            aggregate_throughput_gbps: Number(throughputGbps.toFixed(1)),
-            mean_rtt_ms: fleetVitals.avgRtt || 4.2,
-            aggregate_packet_loss_pct: fleetVitals.avgPacketLoss || 0.002,
-            active_tcp_connections: fleetVitals.totalSockets || 48290,
-            active_p1_incidents: 1,
-          },
-          highlight_host: {
-            hostname: 'prod-edge-gw-01',
-            cluster: 'us-east-cluster-01',
-            status: 'degraded',
-            cpu: 94.2,
-            packet_loss: 4.82,
-          },
-        };
-
-        const serialized = JSON.stringify(broadcastPayload);
+        const payload = this.generateBroadcastPayload();
+        const serialized = JSON.stringify(payload);
 
         for (const [id, client] of this.clients.entries()) {
           if (client.socket.readyState === 1) { // OPEN
@@ -115,7 +142,7 @@ export class WebSocketDispatcher {
       } catch (err) {
         console.error('[WS Dispatcher] Broadcast tick error:', (err as Error).message);
       }
-    }, config.ws.broadcastIntervalMs);
+    }, config.ws.broadcastIntervalMs || 1000);
   }
 
   /**
@@ -138,30 +165,20 @@ export class WebSocketDispatcher {
           this.clients.delete(id);
         }
       }
-    }, config.ws.heartbeatIntervalMs);
+    }, config.ws.heartbeatIntervalMs || 15000);
   }
 
   /**
    * Immediate snapshot sent when a frontend connects
    */
-  private sendInitialSnapshot(client: ClientMetadata): void {
-    const initialPayload: FleetLiveTelemetryBroadcast = {
-      type: 'FLEET_TELEMETRY_DELTA',
-      timestamp: new Date().toISOString(),
-      summary: {
-        fleet_nodes_active: 1428,
-        fleet_nodes_total: 1432,
-        global_avg_cpu_pct: 44.6,
-        aggregate_throughput_gbps: 148.6,
-        mean_rtt_ms: 4.2,
-        aggregate_packet_loss_pct: 0.002,
-        active_tcp_connections: 48290,
-        active_p1_incidents: 1,
-      },
-    };
-
-    if (client.socket.readyState === 1) {
-      client.socket.send(JSON.stringify(initialPayload));
+  private sendSnapshot(client: ClientMetadata): void {
+    try {
+      const payload = this.generateBroadcastPayload();
+      if (client.socket.readyState === 1) {
+        client.socket.send(JSON.stringify(payload));
+      }
+    } catch (err) {
+      console.warn('[WS Dispatcher] Failed to send snapshot:', (err as Error).message);
     }
   }
 

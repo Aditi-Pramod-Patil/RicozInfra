@@ -10,6 +10,7 @@ import { pingClickHouse } from './db/clickhouse.js';
 import { pingPostgres } from './db/postgres.js';
 import { WebSocketDispatcher } from './ws/dispatcher.js';
 import { TelemetryWorker } from './workers/telemetryWorker.js';
+import { NodeRegistry } from './registry/nodeRegistry.js';
 
 export async function buildServer() {
   const app = Fastify({
@@ -60,7 +61,7 @@ export async function buildServer() {
   /**
    * High-Throughput Telemetry Ingestion Endpoint
    * POST /api/v1/telemetry/ingest
-   * Validates incoming agent payload via Zod and enqueues to Redis Streams.
+   * Validates incoming agent payload via Zod and updates the in-memory active node registry.
    */
   app.post('/api/v1/telemetry/ingest', async (request, reply) => {
     const parseResult = TelemetryBatchSchema.safeParse(request.body);
@@ -78,23 +79,23 @@ export async function buildServer() {
     const data = parseResult.data;
     const packets: TelemetryPacket[] = Array.isArray(data) ? data : [data];
 
-    try {
-      // Non-blocking write to Redis Stream buffer
-      const count = await pushTelemetryToStream(packets);
-
-      return reply.status(202).send({
-        status: 'accepted',
-        ingested_count: count,
-        stream: config.redis.streamKey,
-        timestamp: new Date().toISOString(),
-      });
-    } catch (queueErr) {
-      request.log.error(queueErr, 'Failed to enqueue metrics into Redis Stream');
-      return reply.status(503).send({
-        error: 'Ingestion Buffer Unavailable',
-        message: (queueErr as Error).message,
-      });
+    // 1. Update in-memory active node registry (TTL: 15s)
+    const registry = NodeRegistry.getInstance();
+    for (const packet of packets) {
+      registry.recordTelemetry(packet);
     }
+
+    // 2. Buffer to Redis Stream asynchronously (if available)
+    pushTelemetryToStream(packets).catch((err) => {
+      request.log.debug(`[Redis] Stream buffer skipped: ${(err as Error).message}`);
+    });
+
+    return reply.status(202).send({
+      status: 'accepted',
+      ingested_count: packets.length,
+      active_nodes: registry.getActiveNodes().length,
+      timestamp: new Date().toISOString(),
+    });
   });
 
   /**
@@ -147,12 +148,16 @@ async function start() {
   try {
     const { app } = await buildServer();
 
-    // Initialize Redis consumer group on startup
-    await initConsumerGroup();
+    // Initialize Redis consumer group on startup (non-fatal if standalone)
+    await initConsumerGroup().catch((e) => {
+      console.warn(`[Redis] Consumer group init skipped: ${(e as Error).message}`);
+    });
 
-    // Start background processor worker
+    // Start background processor worker (non-fatal if standalone)
     const worker = new TelemetryWorker();
-    await worker.start();
+    worker.start().catch((e) => {
+      console.warn(`[Worker] TelemetryWorker start skipped: ${(e as Error).message}`);
+    });
 
     // Start HTTP & WS Gateway
     await app.listen({ port: config.port, host: config.host });

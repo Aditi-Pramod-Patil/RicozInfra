@@ -15,10 +15,12 @@ export function getRedisClient(): Redis {
       password: config.redis.password,
       db: config.redis.db,
       lazyConnect: true,
-      maxRetriesPerRequest: 3,
-      enableAutoPipelining: true, // Automatically bundles rapid commands into pipelines
+      maxRetriesPerRequest: null,
+      enableOfflineQueue: false,
+      enableAutoPipelining: true,
       retryStrategy(times) {
-        return Math.min(times * 100, 2000);
+        if (times > 3) return null;
+        return 1000;
       },
     });
 

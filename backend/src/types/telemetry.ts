@@ -6,8 +6,11 @@ import { z } from 'zod';
  */
 export const SystemMetricsSchema = z.object({
   cpu_utilization: z.number().min(0).max(100),
-  memory_pressure_pct: z.number().min(0).max(100),
-  disk_read_mb: z.number().min(0),
+  memory_used_bytes: z.number().optional(),
+  memory_total_bytes: z.number().optional(),
+  memory_pressure_pct: z.number().min(0).max(100).optional(),
+  disk_read_bytes: z.number().optional(),
+  disk_read_mb: z.number().optional(),
   packet_loss_pct: z.number().min(0).max(100),
   rtt_ms: z.number().min(0),
   active_sockets: z.number().int().min(0),
@@ -17,11 +20,11 @@ export const SystemMetricsSchema = z.object({
  * Single host telemetry packet
  */
 export const TelemetryPacketSchema = z.object({
-  host_id: z.string().uuid(),
+  host_id: z.string().min(1).max(255),
   hostname: z.string().min(1).max(255),
   cluster: z.string().min(1).max(100),
   role: z.string().min(1).max(100),
-  timestamp: z.string().datetime({ offset: true }),
+  timestamp: z.string(),
   metrics: SystemMetricsSchema,
 });
 
