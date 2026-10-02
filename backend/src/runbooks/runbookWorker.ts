@@ -78,7 +78,7 @@ export class RunbookWorker {
         }
 
         // XREADGROUP GROUP group:runbook-remediation runbook-worker-1 BLOCK 2000 COUNT 5 STREAMS stream:incidents:created >
-        const results = await redis.xreadgroup(
+        const results = (await redis.xreadgroup(
           'GROUP',
           RUNBOOK_CONSUMER_GROUP,
           CONSUMER_NAME,
@@ -89,7 +89,7 @@ export class RunbookWorker {
           'STREAMS',
           INCIDENTS_STREAM_KEY,
           '>'
-        );
+        )) as [string, [string, string[]][]][] | null;
 
         if (!results || results.length === 0) {
           continue;
