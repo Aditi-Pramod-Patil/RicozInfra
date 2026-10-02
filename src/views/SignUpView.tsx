@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Eye, EyeOff, ArrowRight, Lock, KeyRound } from 'lucide-react';
+import { Eye, EyeOff, ArrowRight, Lock, KeyRound, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import type { PageView } from '../types';
 
@@ -45,7 +45,6 @@ export const SignUpView: React.FC<SignUpViewProps> = ({ onNavigate }) => {
     try {
       const res = await signup(fullName, email, orgName, password);
       if (res.success) {
-        // Enforce strict zero-data landing on first signup!
         onNavigate('overview');
       } else {
         setErrorMessage(res.error || 'Failed to initialize workspace.');
@@ -58,9 +57,9 @@ export const SignUpView: React.FC<SignUpViewProps> = ({ onNavigate }) => {
   };
 
   return (
-    <div className="min-h-screen w-full bg-white flex flex-col justify-between py-12 px-4 sm:px-6 lg:px-8 select-none">
-      {/* Top Brand Nav */}
-      <div className="max-w-7xl mx-auto w-full flex items-center justify-between">
+    <div className="min-h-screen w-full bg-white flex flex-col justify-between select-none">
+      {/* 1. TOP BAR (h-16, Pure White, border-b border-slate-200) */}
+      <header className="h-16 w-full border-b border-slate-200 px-6 sm:px-10 flex items-center justify-between shrink-0 bg-white">
         <button
           onClick={() => onNavigate('landing')}
           className="flex items-center gap-1.5 focus:outline-none cursor-pointer group"
@@ -69,187 +68,178 @@ export const SignUpView: React.FC<SignUpViewProps> = ({ onNavigate }) => {
           <span className="text-lg font-bold text-slate-900 tracking-tight group-hover:text-slate-700 transition-colors">
             RicozInfra
           </span>
-          <span className="w-1.5 h-1.5 rounded-full bg-rose-600 inline-block mb-0.5" />
+          <span className="w-1.5 h-1.5 rounded-full bg-[#E11D48] inline-block mb-0.5" />
         </button>
 
-        <div className="flex items-center gap-2 text-xs text-slate-500">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-          <span>Provisioning Engine: Ready</span>
-        </div>
-      </div>
+        <button
+          onClick={() => onNavigate('signin')}
+          className="text-xs font-semibold text-slate-600 hover:text-slate-900 transition-colors flex items-center gap-1 cursor-pointer focus:outline-none"
+        >
+          <span>Already have an account? Sign in</span>
+          <span className="text-slate-400 group-hover:translate-x-0.5 transition-transform">&rarr;</span>
+        </button>
+      </header>
 
-      {/* Main Centered Sign Up Card */}
-      <div className="w-full max-w-lg mx-auto my-auto">
-        <div className="bg-white border border-slate-200 rounded-2xl p-8 sm:p-10 shadow-xs">
-          {/* Logo & Headings */}
-          <div className="text-center mb-8">
-            <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-slate-50 border border-slate-200 mb-4 shadow-2xs">
-              <KeyRound size={22} className="text-slate-900" />
+      {/* 2. MAIN CENTERED CARD CONTAINER */}
+      <main className="flex-1 flex items-center justify-center px-4 py-10">
+        <div className="w-full max-w-[460px]">
+          <div className="bg-white border border-slate-200 rounded-2xl p-8 shadow-sm">
+            {/* Header Icon */}
+            <div className="text-center mb-6">
+              <div className="inline-flex items-center justify-center w-11 h-11 rounded-xl bg-slate-50 border border-slate-200 mb-3 shadow-2xs">
+                <KeyRound size={20} className="text-slate-900" />
+              </div>
+              <h1 className="text-xl font-bold text-slate-900 tracking-tight">
+                Deploy your RicozInfra Workspace
+              </h1>
+              <p className="text-xs text-slate-500 mt-1.5 font-normal">
+                Start monitoring bare-metal, networks, and cloud clusters in real time.
+              </p>
             </div>
 
-            <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">
-              Deploy your RicozInfra Workspace
-            </h1>
-            <p className="text-sm text-slate-500 mt-2 font-normal">
-              Start monitoring bare-metal, networks, and cloud clusters in real time.
-            </p>
-          </div>
+            {/* Error Banner */}
+            {errorMessage && (
+              <div className="mb-5 p-3 rounded-lg bg-rose-50 border border-rose-200 text-xs text-rose-700 flex items-start gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-rose-600 mt-1 shrink-0" />
+                <span>{errorMessage}</span>
+              </div>
+            )}
 
-          {/* Error Banner */}
-          {errorMessage && (
-            <div className="mb-6 p-3.5 rounded-lg bg-rose-50 border border-rose-200 text-xs text-rose-700 flex items-start gap-2.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-rose-600 mt-1.5 shrink-0" />
-              <span>{errorMessage}</span>
-            </div>
-          )}
+            {/* Form */}
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold text-slate-900">
+                    Full Name
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                    placeholder="Alex Mercer"
+                    className="w-full h-11 px-3.5 rounded-lg border border-slate-200 bg-white text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-slate-900 focus:ring-1 focus:ring-slate-900 transition-colors"
+                  />
+                </div>
 
-          {/* Form */}
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-900 mb-1.5">
-                  Full Name
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold text-slate-900">
+                    Work Email Address
+                  </label>
+                  <input
+                    type="email"
+                    required
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="alex@company.com"
+                    className="w-full h-11 px-3.5 rounded-lg border border-slate-200 bg-white text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-slate-900 focus:ring-1 focus:ring-slate-900 transition-colors"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="block text-xs font-semibold text-slate-900">
+                  Organization / Company Name
                 </label>
                 <input
                   type="text"
                   required
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  placeholder="Alex Mercer"
-                  className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 bg-white text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-slate-900 focus:ring-1 focus:ring-slate-900 transition-colors"
+                  value={orgName}
+                  onChange={(e) => setOrgName(e.target.value)}
+                  placeholder="Acme Financial Technologies"
+                  className="w-full h-11 px-3.5 rounded-lg border border-slate-200 bg-white text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-slate-900 focus:ring-1 focus:ring-slate-900 transition-colors"
                 />
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-900 mb-1.5">
-                  Work Email Address
+              <div className="space-y-1.5">
+                <label className="block text-xs font-semibold text-slate-900">
+                  Master Security Password
                 </label>
-                <input
-                  type="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="alex@company.com"
-                  className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 bg-white text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-slate-900 focus:ring-1 focus:ring-slate-900 transition-colors"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-900 mb-1.5">
-                Organization / Company Name
-              </label>
-              <input
-                type="text"
-                required
-                value={orgName}
-                onChange={(e) => setOrgName(e.target.value)}
-                placeholder="Acme Financial Technologies"
-                className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 bg-white text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-slate-900 focus:ring-1 focus:ring-slate-900 transition-colors"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-900 mb-1.5">
-                Master Security Password
-              </label>
-              <div className="relative">
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Create high-entropy password"
-                  className="w-full px-3.5 py-2.5 pr-10 rounded-lg border border-slate-200 bg-white text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-slate-900 focus:ring-1 focus:ring-slate-900 transition-colors"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 focus:outline-none cursor-pointer"
-                >
-                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                </button>
-              </div>
-
-              {/* Real-time Password Strength Criteria */}
-              <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-                <div className={`flex items-center gap-1.5 ${hasMinLength ? 'text-emerald-600 font-medium' : 'text-slate-400'}`}>
-                  <span className={`w-1.5 h-1.5 rounded-full ${hasMinLength ? 'bg-emerald-500' : 'bg-slate-300'}`} />
-                  <span>8+ characters</span>
+                <div className="relative">
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    required
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="Create secure password"
+                    className="w-full h-11 px-3.5 pr-11 rounded-lg border border-slate-200 bg-white text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-slate-900 focus:ring-1 focus:ring-slate-900 transition-colors"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-0 top-0 h-11 w-11 flex items-center justify-center text-slate-400 hover:text-slate-600 focus:outline-none cursor-pointer"
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
                 </div>
-                <div className={`flex items-center gap-1.5 ${hasUppercase ? 'text-emerald-600 font-medium' : 'text-slate-400'}`}>
-                  <span className={`w-1.5 h-1.5 rounded-full ${hasUppercase ? 'bg-emerald-500' : 'bg-slate-300'}`} />
-                  <span>Uppercase letter</span>
-                </div>
-                <div className={`flex items-center gap-1.5 ${hasNumber ? 'text-emerald-600 font-medium' : 'text-slate-400'}`}>
-                  <span className={`w-1.5 h-1.5 rounded-full ${hasNumber ? 'bg-emerald-500' : 'bg-slate-300'}`} />
-                  <span>Numeric digit</span>
-                </div>
-                <div className={`flex items-center gap-1.5 ${hasSpecial ? 'text-emerald-600 font-medium' : 'text-slate-400'}`}>
-                  <span className={`w-1.5 h-1.5 rounded-full ${hasSpecial ? 'bg-emerald-500' : 'bg-slate-300'}`} />
-                  <span>Special character</span>
+
+                {/* Password Criteria Checklist */}
+                <div className="pt-1.5 grid grid-cols-2 gap-1.5 text-[11px]">
+                  <div className={`flex items-center gap-1.5 ${hasMinLength ? 'text-emerald-600 font-medium' : 'text-slate-400'}`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${hasMinLength ? 'bg-emerald-500' : 'bg-slate-300'}`} />
+                    <span>8+ characters</span>
+                  </div>
+                  <div className={`flex items-center gap-1.5 ${hasUppercase ? 'text-emerald-600 font-medium' : 'text-slate-400'}`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${hasUppercase ? 'bg-emerald-500' : 'bg-slate-300'}`} />
+                    <span>Uppercase letter</span>
+                  </div>
+                  <div className={`flex items-center gap-1.5 ${hasNumber ? 'text-emerald-600 font-medium' : 'text-slate-400'}`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${hasNumber ? 'bg-emerald-500' : 'bg-slate-300'}`} />
+                    <span>Numeric digit</span>
+                  </div>
+                  <div className={`flex items-center gap-1.5 ${hasSpecial ? 'text-emerald-600 font-medium' : 'text-slate-400'}`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${hasSpecial ? 'bg-emerald-500' : 'bg-slate-300'}`} />
+                    <span>Special character</span>
+                  </div>
                 </div>
               </div>
-            </div>
 
-            {/* Terms and Privacy Disclaimer */}
-            <div className="pt-2">
-              <label className="flex items-start gap-2.5 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={agreeTerms}
-                  onChange={(e) => setAgreeTerms(e.target.checked)}
-                  className="w-4 h-4 mt-0.5 rounded border-slate-300 text-rose-600 focus:ring-rose-500 cursor-pointer accent-rose-600"
-                />
-                <span className="text-xs text-slate-500 leading-snug">
-                  I agree to the{' '}
-                  <a href="#terms" className="text-slate-900 underline hover:text-slate-700">Master Services Agreement</a> and{' '}
-                  <a href="#privacy" className="text-slate-900 underline hover:text-slate-700">Privacy Policy</a>. Provisioned keys are non-transferable.
-                </span>
-              </label>
-            </div>
+              {/* Terms Checkbox */}
+              <div className="pt-1">
+                <label className="flex items-start gap-2.5 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={agreeTerms}
+                    onChange={(e) => setAgreeTerms(e.target.checked)}
+                    className="w-4 h-4 mt-0.5 rounded border-slate-300 text-rose-600 focus:ring-rose-500 cursor-pointer accent-[#E11D48]"
+                  />
+                  <span className="text-xs text-slate-500 leading-snug">
+                    I agree to the{' '}
+                    <span className="text-slate-900 underline">Master Services Agreement</span> and{' '}
+                    <span className="text-slate-900 underline">Privacy Policy</span>.
+                  </span>
+                </label>
+              </div>
 
-            {/* Primary Action Button: Solid Crimson */}
-            <div className="pt-3">
+              {/* Primary Action Button */}
               <button
                 type="submit"
                 disabled={isLoading}
-                className="w-full py-2.5 px-4 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-sm font-semibold shadow-xs flex items-center justify-center gap-2 cursor-pointer transition-colors disabled:opacity-70"
+                className="w-full h-11 bg-rose-600 hover:bg-rose-700 text-white font-semibold text-sm rounded-lg flex items-center justify-center gap-2 cursor-pointer transition-colors shadow-xs disabled:opacity-60"
               >
                 <span>{isLoading ? 'Generating Tenant Keys...' : 'Create Organization & Generate API Key'}</span>
                 <ArrowRight size={15} />
               </button>
-            </div>
-          </form>
-
-          {/* Bottom Sign In Link */}
-          <div className="mt-8 pt-6 border-t border-slate-100 text-center">
-            <p className="text-xs text-slate-500">
-              Already registered?{' '}
-              <button
-                onClick={() => onNavigate('signin')}
-                className="font-semibold text-rose-600 hover:text-rose-700 cursor-pointer transition-colors"
-              >
-                Sign in to existing workspace
-              </button>
-            </p>
+            </form>
           </div>
         </div>
+      </main>
 
-        {/* Security & Compliance Footer */}
-        <div className="mt-6 text-center text-xs text-slate-400 flex items-center justify-center gap-3">
-          <span className="flex items-center gap-1">
-            <Lock size={12} /> Hardware-backed KMS
-          </span>
-          <span>•</span>
+      {/* 3. FOOTER */}
+      <footer className="w-full py-6 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-center gap-4 text-xs text-slate-400 shrink-0">
+        <div className="flex items-center gap-1.5">
+          <Lock size={12} className="text-slate-400" />
+          <span>Hardware-backed KMS</span>
+        </div>
+        <span className="hidden sm:inline text-slate-300">•</span>
+        <div className="flex items-center gap-1.5">
+          <ShieldCheck size={13} className="text-emerald-500" />
           <span>Dedicated Tenant Isolation</span>
         </div>
-      </div>
-
-      {/* Subtle Copyright Bottom */}
-      <div className="max-w-7xl mx-auto w-full text-center text-xs text-slate-400">
-        &copy; {new Date().getFullYear()} RicozInfra Inc. All rights reserved.
-      </div>
+        <span className="hidden sm:inline text-slate-300">•</span>
+        <span>&copy; {new Date().getFullYear()} RicozInfra Inc.</span>
+      </footer>
     </div>
   );
 };

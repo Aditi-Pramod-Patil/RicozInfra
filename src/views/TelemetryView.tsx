@@ -1,10 +1,13 @@
 import React, { useState } from 'react';
 import { 
   AlertTriangle,
-  RefreshCw
+  RefreshCw,
+  Server
 } from 'lucide-react';
+import { useFleet } from '../context/FleetContext';
 
 export const TelemetryView: React.FC = () => {
+  const { isZeroState } = useFleet();
   const [timeframe, setTimeframe] = useState<'15m' | '1h' | '24h' | '7d'>('24h');
   const [interfaceFilter, setInterfaceFilter] = useState<'all' | 'edge' | 'vpc'>('all');
   const [refreshing, setRefreshing] = useState(false);
@@ -16,7 +19,7 @@ export const TelemetryView: React.FC = () => {
   };
 
   // Interfaces data for Interface & Route Saturation Table
-  const allInterfaces = [
+  const allInterfaces = isZeroState ? [] : [
     {
       id: 'if-1',
       name: 'bond0 (Aggregated LACP 40GbE)',
@@ -240,23 +243,23 @@ export const TelemetryView: React.FC = () => {
               Aggregate Throughput
             </span>
             <span className="metric-pill-slate">
-              <span>Peak: 182.4 Gbps</span>
+              <span>{isZeroState ? 'No Ingress' : 'Peak: 182.4 Gbps'}</span>
             </span>
           </div>
 
           <div style={{ fontSize: '28px', fontWeight: 600, color: '#0F172A', letterSpacing: '-0.03em' }}>
-            148.6 <span style={{ fontSize: '16px', fontWeight: 500, color: '#64748B' }}>Gbps</span>
+            {isZeroState ? '—' : '148.6'} <span style={{ fontSize: '16px', fontWeight: 500, color: '#64748B' }}>Gbps</span>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginTop: '10px', fontSize: '12px', color: '#64748B' }}>
             <div>
               <span style={{ color: '#94A3B8' }}>Rx: </span>
-              <strong style={{ color: '#0F172A', fontWeight: 600 }}>82.0 Gbps</strong>
+              <strong style={{ color: '#0F172A', fontWeight: 600 }}>{isZeroState ? '—' : '82.0 Gbps'}</strong>
             </div>
             <span style={{ color: '#CBD5E1' }}>•</span>
             <div>
               <span style={{ color: '#94A3B8' }}>Tx: </span>
-              <strong style={{ color: '#0F172A', fontWeight: 600 }}>66.6 Gbps</strong>
+              <strong style={{ color: '#0F172A', fontWeight: 600 }}>{isZeroState ? '—' : '66.6 Gbps'}</strong>
             </div>
           </div>
         </div>
@@ -272,21 +275,21 @@ export const TelemetryView: React.FC = () => {
             <span style={{ fontSize: '12px', fontWeight: 500, color: '#64748B' }}>
               Mean Round-Trip Time (RTT)
             </span>
-            <span className="metric-pill-emerald">
-              <span className="pulse-dot-emerald" />
-              <span>Optimal</span>
+            <span className={isZeroState ? 'metric-pill-slate' : 'metric-pill-emerald'}>
+              {!isZeroState && <span className="pulse-dot-emerald" />}
+              <span>{isZeroState ? 'Awaiting Stream' : 'Optimal'}</span>
             </span>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
             <span style={{ fontSize: '28px', fontWeight: 600, color: '#0F172A', letterSpacing: '-0.03em' }}>
-              4.2
+              {isZeroState ? '—' : '4.2'}
             </span>
             <span style={{ fontSize: '16px', fontWeight: 500, color: '#64748B' }}>ms</span>
           </div>
 
           <div style={{ marginTop: '10px', fontSize: '12px', color: '#64748B' }}>
-            Global Edge to Spine Core switches
+            {isZeroState ? 'Awaiting node ping heartbeats' : 'Global Edge to Spine Core switches'}
           </div>
         </div>
 
@@ -303,19 +306,19 @@ export const TelemetryView: React.FC = () => {
             </span>
             <span className="metric-pill-emerald">
               <span className="pulse-dot-emerald" />
-              <span>Nominal Threshold</span>
+              <span>Nominal</span>
             </span>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
             <span style={{ fontSize: '28px', fontWeight: 600, color: '#10B981', letterSpacing: '-0.03em' }}>
-              0.002
+              {isZeroState ? '0.00' : '0.002'}
             </span>
             <span style={{ fontSize: '16px', fontWeight: 500, color: '#64748B' }}>%</span>
           </div>
 
           <div style={{ marginTop: '10px', fontSize: '12px', color: '#64748B' }}>
-            SLA Threshold: &lt; 0.05% packet loss
+            {isZeroState ? 'Awaiting packet drop counters' : 'SLA Threshold: < 0.05% packet loss'}
           </div>
         </div>
 
@@ -331,19 +334,19 @@ export const TelemetryView: React.FC = () => {
               Active TCP Connections
             </span>
             <span className="metric-pill-slate">
-              <span>Zero Drops</span>
+              <span>{isZeroState ? 'Awaiting Stream' : 'Zero Drops'}</span>
             </span>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
             <span style={{ fontSize: '28px', fontWeight: 600, color: '#0F172A', letterSpacing: '-0.03em' }}>
-              48,290
+              {isZeroState ? '0' : '48,290'}
             </span>
             <span style={{ fontSize: '13px', fontWeight: 500, color: '#64748B' }}>sockets</span>
           </div>
 
           <div style={{ marginTop: '10px', fontSize: '12px', color: '#64748B' }}>
-            ESTABLISHED across 14 edge ingress nodes
+            {isZeroState ? '0 sockets tracked' : 'ESTABLISHED across 14 edge ingress nodes'}
           </div>
         </div>
       </section>
@@ -542,7 +545,34 @@ export const TelemetryView: React.FC = () => {
               </tr>
             </thead>
             <tbody>
-              {filteredInterfaces.map((item) => {
+              {filteredInterfaces.length === 0 ? (
+                <tr>
+                  <td colSpan={7} style={{ padding: '56px 24px', textAlign: 'center' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
+                      <div style={{
+                        width: '44px',
+                        height: '44px',
+                        borderRadius: '12px',
+                        background: '#F8FAFC',
+                        border: '1px solid #E2E8F0',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: '#94A3B8'
+                      }}>
+                        <Server size={20} />
+                      </div>
+                      <h3 style={{ fontSize: '15px', fontWeight: 600, color: '#0F172A', marginTop: '4px' }}>
+                        0 Active Network Interfaces Detected
+                      </h3>
+                      <p style={{ fontSize: '12.5px', color: '#64748B', maxWidth: '420px', lineHeight: 1.5 }}>
+                        Deploy the RicozInfra telemetry collector daemon to stream interface vitals and socket telemetry.
+                      </p>
+                    </div>
+                  </td>
+                </tr>
+              ) : (
+                filteredInterfaces.map((item) => {
                 const isCritical = item.status === 'critical';
 
                 return (
@@ -611,7 +641,7 @@ export const TelemetryView: React.FC = () => {
                     </td>
                   </tr>
                 );
-              })}
+              }))}
             </tbody>
           </table>
         </div>

@@ -32,7 +32,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
   const [copiedSnippet, setCopiedSnippet] = useState(false);
   const [isAddHostModalOpen, setIsAddHostModalOpen] = useState(false);
 
-  const apiKey = organization?.apiKey || 'rcz_live_production_key_sample';
+  const apiKey = organization?.apiKey || 'ORG_KEY_DEFAULT';
   const curlCommand = `curl -sSL https://get.ricozinfra.com/install.sh | sudo bash -s -- --token=${apiKey}`;
 
   const copySnippet = () => {
@@ -41,7 +41,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
     setTimeout(() => setCopiedSnippet(false), 2000);
   };
 
-  // Sparkline data
+  // Sparkline data: flat baseline on zero state
   const sparkPoints = isZeroState ? [0, 0, 0, 0, 0, 0, 0, 0, 0, 0] : [38, 35, 34, 40, 46, 51, 53, 55, 88, 62, 49, 44, 42, 41];
   const minSpark = 0;
   const maxSpark = 100;
@@ -99,7 +99,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
                 No Infrastructure Connected Yet
               </h2>
               <p className="text-xs sm:text-sm text-slate-600 leading-relaxed font-normal">
-                Deploy the RicozInfra telemetry collector daemon to your first server or Kubernetes cluster to stream real-time metrics.
+                Deploy the lightweight RicozInfra collector daemon to stream real-time metrics.
               </p>
 
               {/* Command snippet with one-click copy */}
@@ -111,7 +111,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
                   </code>
                   <button
                     onClick={copySnippet}
-                    className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white rounded text-xs transition-colors flex items-center gap-1 shrink-0 cursor-pointer"
+                    className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white rounded text-xs transition-colors flex items-center gap-1 shrink-0 cursor-pointer font-medium"
                     title="Copy to clipboard"
                   >
                     {copiedSnippet ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
@@ -128,7 +128,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
                 className="btn-crimson-primary text-xs justify-center"
               >
                 <Plus size={14} />
-                <span>Add First Host / Download Agent</span>
+                <span>+ Add First Host</span>
               </button>
 
               <button
@@ -142,9 +142,9 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
 
               <button
                 onClick={loadRealFleetData}
-                className="px-3 py-1.5 text-xs text-slate-400 hover:text-slate-600 transition-colors text-center"
+                className="px-3 py-1.5 text-xs text-slate-400 hover:text-slate-600 transition-colors text-center cursor-pointer"
               >
-                Inspect Populated Fleet Demo
+                Load Populated Demo Fleet
               </button>
             </div>
           </div>
@@ -255,10 +255,10 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
 
           <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
             <span style={{ fontSize: '28px', fontWeight: 600, color: '#0F172A', letterSpacing: '-0.03em' }}>
-              {isZeroState ? '0' : hosts.length.toLocaleString()}
+              {isZeroState ? '—' : hosts.length.toLocaleString()}
             </span>
-            <span style={{ fontSize: '15px', fontWeight: 400, color: '#94A3B8' }}>
-              / {isZeroState ? '0' : hosts.length.toLocaleString()}
+            <span style={{ fontSize: '14px', fontWeight: 500, color: '#94A3B8' }}>
+              {isZeroState ? '0 Active Nodes' : `/ ${hosts.length.toLocaleString()}`}
             </span>
           </div>
 
@@ -294,14 +294,18 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
 
             {/* Clean minimalist slate stroke line sparkline */}
             <svg width={svgSparkWidth} height={svgSparkHeight} style={{ overflow: 'visible' }}>
-              <path
-                d={sparklineD}
-                fill="none"
-                stroke="#94A3B8"
-                strokeWidth="1.75"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
+              {isZeroState ? (
+                <line x1="0" y1="16" x2={svgSparkWidth} y2="16" stroke="#CBD5E1" strokeWidth="1.5" strokeDasharray="3 3" />
+              ) : (
+                <path
+                  d={sparklineD}
+                  fill="none"
+                  stroke="#94A3B8"
+                  strokeWidth="1.75"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              )}
             </svg>
           </div>
         </div>
@@ -318,7 +322,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
           </div>
 
           <div style={{ fontSize: '28px', fontWeight: 600, color: '#0F172A', letterSpacing: '-0.03em' }}>
-            {isZeroState ? '0.0' : (hosts[0]?.rxGbps ? `${(hosts[0].rxGbps + (hosts[0].txGbps || 0)).toFixed(1)}` : '148.6')}{' '}
+            {isZeroState ? '—' : (hosts[0]?.rxGbps ? `${(hosts[0].rxGbps + (hosts[0].txGbps || 0)).toFixed(1)}` : '148.6')}{' '}
             <span style={{ fontSize: '18px', fontWeight: 500, color: '#64748B' }}>Gbps</span>
           </div>
 
@@ -360,7 +364,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
           </div>
 
           <div style={{ marginTop: '12px', fontSize: '12px', color: '#64748B' }}>
-            {activeIncidents.length > 0 ? '12 downstream alerts collapsed' : 'Zero outages across registered nodes'}
+            {activeIncidents.length > 0 ? `${activeIncidents.length} active incidents detected` : '0 Active Incidents — all systems nominal'}
           </div>
         </div>
       </section>

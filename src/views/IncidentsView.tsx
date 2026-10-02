@@ -60,7 +60,7 @@ export const IncidentsView: React.FC<IncidentsViewProps> = ({
             </div>
 
             <h1 style={{ fontSize: '22px', fontWeight: 600, color: '#0F172A', letterSpacing: '-0.02em' }}>
-              All Systems Operational — Zero Active Incidents
+              All Systems Operational — 0 Active Incidents
             </h1>
 
             <p style={{ fontSize: '13.5px', color: '#64748B', maxWidth: '580px', marginTop: '6px', lineHeight: 1.6 }}>

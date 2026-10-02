@@ -194,10 +194,10 @@ export const HostInventoryView: React.FC<HostInventoryViewProps> = ({
         <table className="data-table">
           <thead>
             <tr>
-              <th>Hostname &amp; IP</th>
-              <th>Role / Cluster</th>
-              <th>CPU Usage</th>
-              <th>Memory / RAM</th>
+              <th>Hostname</th>
+              <th>Role</th>
+              <th>CPU</th>
+              <th>RAM</th>
               <th>Throughput</th>
               <th>Uptime</th>
               <th>Status</th>
@@ -236,7 +236,7 @@ export const HostInventoryView: React.FC<HostInventoryViewProps> = ({
                         className="btn-crimson-primary"
                       >
                         <Plus size={14} />
-                        <span>Add First Host / Download Agent</span>
+                        <span>+ Add First Host</span>
                       </button>
                     </div>
                   </div>
