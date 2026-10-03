@@ -98,15 +98,31 @@ export class RunbookWorker {
         for (const [, messages] of results) {
           for (const [messageId, fields] of messages) {
             try {
-              let incident: IncidentEvent | null = null;
+              let rawPayload: any = null;
               for (let i = 0; i < fields.length; i += 2) {
                 if (fields[i] === 'payload') {
-                  incident = JSON.parse(fields[i + 1]);
+                  rawPayload = JSON.parse(fields[i + 1]);
                   break;
                 }
               }
 
-              if (incident) {
+              if (rawPayload) {
+                // Normalize incident payload (handles incident_id, root_cause_node, root_cause_role, severity, affected_cluster)
+                const incident: IncidentEvent = {
+                  id: rawPayload.incident_id || rawPayload.id || `INC-${Math.floor(1000 + Math.random() * 9000)}`,
+                  title: rawPayload.title || `Incident on ${rawPayload.root_cause_node || rawPayload.target_host || 'target node'}`,
+                  severity: rawPayload.severity || 'P1',
+                  role: rawPayload.root_cause_role || rawPayload.role || 'Edge-Gateway',
+                  target_host: rawPayload.root_cause_node || rawPayload.target_host || 'unknown-host',
+                  cluster: rawPayload.affected_cluster || rawPayload.cluster || 'us-east-cluster-01',
+                  metric: rawPayload.metric || 'cpu_utilization',
+                  value: rawPayload.value ?? 0,
+                  threshold: rawPayload.threshold ?? 0,
+                  correlated_nodes_count: rawPayload.correlated_nodes_count ?? 1,
+                  total_cluster_nodes: rawPayload.total_cluster_nodes ?? 4,
+                  timestamp: rawPayload.timestamp || new Date().toISOString(),
+                };
+
                 await this.processIncident(incident);
               }
 

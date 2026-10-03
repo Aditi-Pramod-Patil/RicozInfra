@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { RunbooksRepository } from '../db/runbooksRepository.js';
 import { SafetyGuard } from './safety.js';
 import { executeK8sCordonDrain } from './actions/k8sCordonDrain.js';
@@ -40,7 +41,7 @@ export class RunbookEngine {
     incident: IncidentEvent,
     rule: RunbookRule
   ): Promise<RunbookExecution> {
-    const executionId = `exec-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+    const executionId = crypto.randomUUID ? crypto.randomUUID() : `exec-${Date.now()}`;
     const startTime = Date.now();
     const rawLogs: string[] = [];
 

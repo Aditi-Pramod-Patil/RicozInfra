@@ -277,6 +277,11 @@ async function start() {
       console.warn(`[Worker] TelemetryWorker start skipped: ${(e as Error).message}`);
     });
 
+    // Initialize PostgreSQL runbooks schema & seed rules (non-fatal if standalone)
+    await RunbooksRepository.initSchema().catch((e) => {
+      console.warn(`[Postgres] Runbooks schema init skipped: ${(e as Error).message}`);
+    });
+
     // Start autonomous runbook remediation worker
     const runbookWorker = new RunbookWorker();
     runbookWorker.start().catch((e) => {

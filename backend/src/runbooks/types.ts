@@ -37,11 +37,15 @@ export interface RunbookRule {
 
 export interface IncidentEvent {
   id: string; // e.g. "INC-9402"
+  incident_id?: string;
   title: string;
   severity: IncidentSeverity;
   role: string;
+  root_cause_role?: string;
   target_host: string;
+  root_cause_node?: string;
   cluster: string;
+  affected_cluster?: string;
   metric: string;
   value: number;
   threshold: number;

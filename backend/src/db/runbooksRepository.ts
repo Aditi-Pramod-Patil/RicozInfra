@@ -154,6 +154,72 @@ const inMemoryExecutions: RunbookExecution[] = [
 
 export class RunbooksRepository {
   /**
+   * Idempotently initialize PostgreSQL tables for runbook_rules and runbook_executions
+   */
+  public static async initSchema(): Promise<void> {
+    try {
+      const pool = getPostgresPool();
+      await pool.query(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp";`);
+
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS runbook_rules (
+            id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+            name VARCHAR(255) NOT NULL,
+            trigger_conditions JSONB NOT NULL,
+            action_chain JSONB NOT NULL,
+            is_active BOOLEAN NOT NULL DEFAULT true,
+            cooldown_seconds INT NOT NULL DEFAULT 900,
+            max_blast_radius_nodes INT NOT NULL DEFAULT 2,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_runbook_rules_active ON runbook_rules(is_active);
+
+        CREATE TABLE IF NOT EXISTS runbook_executions (
+            id VARCHAR(100) PRIMARY KEY,
+            incident_id VARCHAR(50) NOT NULL,
+            rule_id UUID REFERENCES runbook_rules(id) ON DELETE SET NULL,
+            target_host VARCHAR(255) NOT NULL,
+            status VARCHAR(20) NOT NULL CHECK (status IN ('running', 'success', 'failed', 'aborted')),
+            duration_ms INT DEFAULT 0,
+            execution_logs TEXT DEFAULT '',
+            started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            completed_at TIMESTAMPTZ
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_runbook_executions_incident ON runbook_executions(incident_id);
+        CREATE INDEX IF NOT EXISTS idx_runbook_executions_target ON runbook_executions(target_host, started_at);
+        CREATE INDEX IF NOT EXISTS idx_runbook_executions_status ON runbook_executions(status);
+      `);
+
+      // Seed default rules if table is empty
+      const existing = await pool.query('SELECT COUNT(*) FROM runbook_rules');
+      if (parseInt(existing.rows[0].count, 10) === 0) {
+        for (const rule of inMemoryRules) {
+          await pool.query(
+            `INSERT INTO runbook_rules (id, name, trigger_conditions, action_chain, is_active, cooldown_seconds, max_blast_radius_nodes)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)
+             ON CONFLICT (id) DO NOTHING`,
+            [
+              rule.id,
+              rule.name,
+              JSON.stringify(rule.trigger_conditions),
+              JSON.stringify(rule.action_chain),
+              rule.is_active,
+              rule.cooldown_seconds,
+              rule.max_blast_radius_nodes,
+            ]
+          );
+        }
+        console.log('[RunbooksRepository] Seeded default autonomous remediation rules in PostgreSQL.');
+      }
+    } catch (err) {
+      console.warn(`[RunbooksRepository] PostgreSQL schema init notice: ${(err as Error).message}`);
+    }
+  }
+
+  /**
    * Fetch all active runbook rules
    */
   public static async getActiveRules(): Promise<RunbookRule[]> {

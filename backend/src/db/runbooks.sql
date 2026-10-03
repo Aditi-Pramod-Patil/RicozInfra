@@ -22,7 +22,7 @@ CREATE INDEX IF NOT EXISTS idx_runbook_rules_active ON runbook_rules(is_active);
 
 -- 2. Runbook Execution & Audit Trail Log Table
 CREATE TABLE IF NOT EXISTS runbook_executions (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id VARCHAR(100) PRIMARY KEY DEFAULT uuid_generate_v4()::text,
     incident_id VARCHAR(50) NOT NULL,
     rule_id UUID REFERENCES runbook_rules(id) ON DELETE SET NULL,
     target_host VARCHAR(255) NOT NULL,
